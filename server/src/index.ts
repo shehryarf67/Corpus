@@ -1,9 +1,7 @@
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { Pool } from 'pg'
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL })
+import { pool } from './lib/db.js'
 
 const app = new Hono()
 app.use('*', cors({ origin: 'http://localhost:3000' }))
