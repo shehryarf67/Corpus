@@ -26,5 +26,8 @@
   "homepage": "https://github.com/shehryarf67/Corpus#readme",
   "devDependencies": {
     "concurrently": "^10.0.4"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^6.2.108"
   }
 }
