@@ -35,7 +35,18 @@ export type TextRun = {
   y: number
   fontSize: number
   fontName: string
+  // True for text drawn at a significant angle (e.g. a sideways preprint
+  // watermark along the page margin). Layout logic downstream assumes
+  // upright, horizontal text — a rotated fragment's x/y anchor doesn't
+  // mean "this text visually sits here" the way it does for normal text,
+  // so callers should generally exclude these rather than try to place them.
+  isRotated: boolean
 }
+
+// How far a fragment's text direction can be from perfectly horizontal (0°)
+// or upside-down (180°) before it's considered rotated rather than just
+// minor rendering jitter.
+const ROTATION_TOLERANCE_DEGREES = 10
 
 export async function extractTextRuns(fileBuffer: Buffer): Promise<TextRun[]> {
     // We use Buffer instead of Array for better performance on large PDFs, since it avoids an extra copy of the data.
@@ -66,6 +77,17 @@ export async function extractTextRuns(fileBuffer: Buffer): Promise<TextRun[]> {
       const fontSize = Math.sqrt((scaleX ?? 0) ** 2 + (skewX ?? 0) ** 2) ||
         Math.sqrt((skewY ?? 0) ** 2 + (scaleY ?? 0) ** 2)
 
+      // The angle of the matrix's x-axis basis vector — for upright text
+      // this points along positive x (angle ~0°); a 90°-rotated fragment
+      // (like a sideways watermark) has scaleX/skewX swapped from normal,
+      // putting this angle near ±90° instead.
+      const rotationDegrees = Math.atan2(skewX ?? 0, scaleX ?? 0) * (180 / Math.PI)
+      const distanceFromUpright = Math.min(
+        Math.abs(rotationDegrees),
+        Math.abs(180 - Math.abs(rotationDegrees))
+      )
+      const isRotated = distanceFromUpright > ROTATION_TOLERANCE_DEGREES
+
       runs.push({
         text: textItem.str,
         page: pageNumber,
@@ -73,6 +95,7 @@ export async function extractTextRuns(fileBuffer: Buffer): Promise<TextRun[]> {
         y: y ?? 0,
         fontSize,
         fontName: textItem.fontName,
+        isRotated,
       })
     }
   }

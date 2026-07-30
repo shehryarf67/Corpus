@@ -42,6 +42,18 @@ const HEADING_SIZE_FACTOR = 1.3
 // line on the page. Lines narrower than that are treated as column-restricted.
 const WIDE_LINE_WIDTH_FACTOR = 0.6
 
+// A gap between sorted left-edges this many times the typical (median) gap
+// counts as a real column gutter, not just normal left-edge variation
+// within a single column (indentation, justification).
+const GUTTER_GAP_FACTOR = 3
+
+// A gutter also has to be at least this many points wide regardless of the
+// relative factor above — guards against the median gap itself being ~0
+// (e.g. many lines sharing an identical left edge), which would otherwise
+// make GUTTER_GAP_FACTOR's threshold 0 and treat any tiny variation as a
+// new column.
+const MIN_GUTTER_GAP = 20
+
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b)
   const mid = Math.floor(sorted.length / 2)
@@ -51,10 +63,17 @@ function median(values: number[]): number {
 }
 
 function groupIntoLines(runs: TextRun[]): Line[] {
+  // Rotated fragments (e.g. a sideways preprint watermark) don't have a
+  // meaningful "visual row" y-position the way upright text does — their
+  // anchor point can coincidentally land close to an unrelated line's y
+  // and get fused into it. Drop them before line-grouping ever runs,
+  // rather than trying to place them correctly.
+  const upright = runs.filter((run) => !run.isRotated)
+
   // Reading order: page first, then descending y (PDF y grows upward, so a
   // *larger* y is higher on the page), then ascending x (left to right)
   // for fragments that end up sharing a line.
-  const sorted = [...runs].sort((a, b) => a.page - b.page || b.y - a.y || a.x - b.x)
+  const sorted = [...upright].sort((a, b) => a.page - b.page || b.y - a.y || a.x - b.x)
 
   const lines: Line[] = []
 
@@ -116,6 +135,68 @@ function groupIntoLines(runs: TextRun[]): Line[] {
   return lines
 }
 
+// Finds the x-positions where one column ends and the next begins, from
+// the narrow (column-restricted) lines' left edges. Same idea as
+// PARAGRAPH_GAP_FACTOR: sort the values, and any gap between neighbors
+// that's much bigger than the typical gap is treated as a real boundary
+// rather than ordinary within-column variation. Returns 0 boundaries for a
+// single column, 1 for two columns, 2 for three, and so on — the count
+// isn't assumed in advance, it falls out of however many real gaps exist.
+function findColumnBoundaries(narrowLines: Line[]): number[] {
+  // Pull out just the left-edge x of every line and sort ascending. Once
+  // sorted, lines from the same column cluster tightly together (small
+  // left-edge variation from indentation/justification), and real column
+  // gutters show up as noticeably bigger jumps between clusters.
+  const sortedX = narrowLines.map((line) => line.minX).sort((a, b) => a - b)
+
+  // The distance from each x-value to the one right before it, e.g.
+  // sortedX = [30, 32, 33, 250, 252] -> gaps = [2, 1, 217, 2]. Most gaps
+  // here are small (within-column noise); one is huge (a real gutter).
+  const gaps: number[] = []
+  for (let i = 1; i < sortedX.length; i++) {
+    gaps.push((sortedX[i] ?? 0) - (sortedX[i - 1] ?? 0))
+  }
+
+  // The cutoff for "this gap is a real column gutter, not just noise."
+  // Relative check: bigger than GUTTER_GAP_FACTOR times the typical
+  // (median) gap. Absolute floor: at least MIN_GUTTER_GAP points
+  // regardless, so a near-zero median (many lines sharing one left edge)
+  // can't drag the threshold down to ~0 and flag tiny noise as a boundary.
+  const gutterThreshold = Math.max(median(gaps) * GUTTER_GAP_FACTOR, MIN_GUTTER_GAP)
+
+  // Walk the same consecutive pairs again, and this time keep the ones
+  // whose gap actually clears the threshold — each one marks a real
+  // column boundary. (Yes, this recomputes right - left, which was
+  // already computed above for `gaps` — a small duplication, not a bug.)
+  const boundaries: number[] = []
+  for (let i = 1; i < sortedX.length; i++) {
+    const left = sortedX[i - 1] ?? 0
+    const right = sortedX[i] ?? 0
+    if (right - left > gutterThreshold) {
+      // Record the midpoint of the gutter itself, not either edge — a
+      // line is classified by whichever side of the empty gutter space
+      // it's closer to. columnIndexFor uses this against `line.minX`.
+      boundaries.push((left + right) / 2)
+    }
+  }
+
+  // Because sortedX is ascending and i only increases, any boundary found
+  // later in the loop is always bigger than one found earlier — so
+  // `boundaries` comes out already sorted left-to-right, with no
+  // explicit sort needed here.
+  return boundaries
+}
+
+// Given the boundaries found above, which column (0 = leftmost) a line
+// falls into — just counting how many boundaries its left edge is past.
+function columnIndexFor(line: Line, boundaries: number[]): number {
+  let index = 0
+  for (const boundary of boundaries) {
+    if (line.minX >= boundary) index++
+  }
+  return index
+}
+
 function reorderForColumns(lines: Line[]): Line[] {
   const pages = [...new Set(lines.map((line) => line.page))].sort((a, b) => a - b)
   const result: Line[] = []
@@ -134,22 +215,28 @@ function reorderForColumns(lines: Line[]): Line[] {
       continue
     }
 
-    // The horizontal midpoint of the column content itself, derived from
-    // the narrow lines' own bounding box — not the full page width, which
-    // we don't have without going back to extract.ts for page dimensions.
-    const contentMinX = Math.min(...narrow.map((line) => line.minX))
-    const contentMaxX = Math.max(...narrow.map((line) => line.maxX))
-    const midpointX = (contentMinX + contentMaxX) / 2
+    // However many real column boundaries exist on this page — not
+    // assumed to be exactly one (i.e. not assumed to be exactly two
+    // columns); could be zero, one, two, or more.
+    const columnBoundaries = findColumnBoundaries(narrow)
 
     // Walk the page in original order, buffering consecutive narrow lines.
-    // A wide line (or the end of the page) flushes the buffer: left-column
-    // lines first (top-to-bottom), then right-column lines (top-to-bottom).
+    // A wide line (or the end of the page) flushes the buffer: column 0's
+    // lines first (top-to-bottom), then column 1's, then column 2's, etc.
     let buffer: Line[] = []
     const flushBuffer = () => {
       if (buffer.length === 0) return
-      const left = buffer.filter((line) => (line.minX + line.maxX) / 2 < midpointX)
-      const right = buffer.filter((line) => (line.minX + line.maxX) / 2 >= midpointX)
-      result.push(...left, ...right)
+
+      const columns: Line[][] = []
+      for (const line of buffer) {
+        const index = columnIndexFor(line, columnBoundaries)
+        columns[index] ??= []
+        columns[index].push(line)
+      }
+
+      for (const column of columns) {
+        if (column) result.push(...column)
+      }
       buffer = []
     }
 
