@@ -5,6 +5,8 @@ type Line = {
     page: number
     y: number
     fontSize: number
+    minX: number
+    maxX: number
 }
 
 type Paragraph = { text: string; page: number; fontSize: number }
@@ -35,6 +37,11 @@ const FONT_SIZE_CHANGE_TOLERANCE = 1
 // many times the document's baseline (body text) font size.
 const HEADING_SIZE_FACTOR = 1.3
 
+// A line is treated as "full width" (title, author block — not confined to
+// a single column) when its width is at least this fraction of the widest
+// line on the page. Lines narrower than that are treated as column-restricted.
+const WIDE_LINE_WIDTH_FACTOR = 0.6
+
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b)
   const mid = Math.floor(sorted.length / 2)
@@ -54,7 +61,8 @@ function groupIntoLines(runs: TextRun[]): Line[] {
   // The line currently being built, or null if we haven't started one yet.
   // We can't push a finished Line into `lines` until we know no more
   // fragments are going to join it.
-  let current: { texts: string[]; page: number; y: number; fontSize: number } | null = null
+  let current: { texts: string[]; page: number; y: number; fontSize: number; minX: number; maxX: number } | null =
+    null
 
   for (const run of sorted) {
     const belongsToCurrentLine =
@@ -69,6 +77,11 @@ function groupIntoLines(runs: TextRun[]): Line[] {
       // Take the largest fragment size on the line — covers cases like an
       // inline superscript rendering slightly smaller than the rest.
       current.fontSize = Math.max(current.fontSize, run.fontSize)
+      // Track the line's horizontal extent — needed later to tell a
+      // full-width line (title, author block) apart from a line confined
+      // to a single column.
+      current.minX = Math.min(current.minX, run.x)
+      current.maxX = Math.max(current.maxX, run.x)
     } else {
       // Doesn't belong with the current line — close it off (if there was
       // one) and start a new one seeded with this fragment.
@@ -78,9 +91,11 @@ function groupIntoLines(runs: TextRun[]): Line[] {
           page: current.page,
           y: current.y,
           fontSize: current.fontSize,
+          minX: current.minX,
+          maxX: current.maxX,
         })
       }
-      current = { texts: [run.text], page: run.page, y: run.y, fontSize: run.fontSize }
+      current = { texts: [run.text], page: run.page, y: run.y, fontSize: run.fontSize, minX: run.x, maxX: run.x }
     }
   }
 
@@ -93,10 +108,63 @@ function groupIntoLines(runs: TextRun[]): Line[] {
       page: current.page,
       y: current.y,
       fontSize: current.fontSize,
+      minX: current.minX,
+      maxX: current.maxX,
     })
   }
 
   return lines
+}
+
+function reorderForColumns(lines: Line[]): Line[] {
+  const pages = [...new Set(lines.map((line) => line.page))].sort((a, b) => a - b)
+  const result: Line[] = []
+
+  for (const page of pages) {
+    const pageLines = lines.filter((line) => line.page === page)
+    const maxWidth = Math.max(...pageLines.map((line) => line.maxX - line.minX))
+
+    const wide = new Set(pageLines.filter((line) => line.maxX - line.minX >= maxWidth * WIDE_LINE_WIDTH_FACTOR))
+    const narrow = pageLines.filter((line) => !wide.has(line))
+
+    // Nothing column-restricted on this page (or the page is essentially
+    // one wide block) — original top-to-bottom order is already correct.
+    if (narrow.length === 0) {
+      result.push(...pageLines)
+      continue
+    }
+
+    // The horizontal midpoint of the column content itself, derived from
+    // the narrow lines' own bounding box — not the full page width, which
+    // we don't have without going back to extract.ts for page dimensions.
+    const contentMinX = Math.min(...narrow.map((line) => line.minX))
+    const contentMaxX = Math.max(...narrow.map((line) => line.maxX))
+    const midpointX = (contentMinX + contentMaxX) / 2
+
+    // Walk the page in original order, buffering consecutive narrow lines.
+    // A wide line (or the end of the page) flushes the buffer: left-column
+    // lines first (top-to-bottom), then right-column lines (top-to-bottom).
+    let buffer: Line[] = []
+    const flushBuffer = () => {
+      if (buffer.length === 0) return
+      const left = buffer.filter((line) => (line.minX + line.maxX) / 2 < midpointX)
+      const right = buffer.filter((line) => (line.minX + line.maxX) / 2 >= midpointX)
+      result.push(...left, ...right)
+      buffer = []
+    }
+
+    for (const line of pageLines) {
+      if (wide.has(line)) {
+        flushBuffer()
+        result.push(line)
+      } else {
+        buffer.push(line)
+      }
+    }
+    flushBuffer()
+  }
+
+  return result
 }
 
 
@@ -148,7 +216,8 @@ function groupIntoParagraphs(lines: Line[]): Paragraph[] {
 export async function layoutText(fileBuffer: Buffer): Promise<Block[]> {
   const runs = await extractTextRuns(fileBuffer)
   const lines = groupIntoLines(runs)
-  const paragraphs = groupIntoParagraphs(lines)
+  const orderedLines = reorderForColumns(lines)
+  const paragraphs = groupIntoParagraphs(orderedLines)
 
   // Whole-document view, needed before classifying any individual
   // paragraph — this is why it can't live inside groupIntoParagraphs,
