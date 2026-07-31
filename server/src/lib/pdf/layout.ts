@@ -11,7 +11,7 @@ type Line = {
 
 type Paragraph = { text: string; page: number; fontSize: number }
 
-type Block = {
+export type Block = {
   type: 'heading' | 'paragraph'
   text: string
   page: number
