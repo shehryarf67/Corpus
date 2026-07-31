@@ -28,6 +28,89 @@ type Chunk = {
   chunkIndex: number
 }
 
+// Splits text at sentence boundaries. The lookbehind `(?<=[.?!])` matches
+// the position right after a period/question mark/exclamation point
+// without consuming it, so the punctuation stays attached to the sentence
+// it ends, and `\s+` (the whitespace after it) is what actually gets
+// removed as the split point.
+function splitIntoSentences(text: string): string[] {
+  return text.split(/(?<=[.?!])\s+/).filter((sentence) => sentence.length > 0)
+}
+
+// Only used as a last resort, for the rare case where a single "sentence"
+// (by the simple rule above) is still too big on its own — e.g. a long
+// run-on line with no punctuation at all.
+function splitIntoWords(text: string): string[] {
+  return text.split(/\s+/).filter((word) => word.length > 0)
+}
+
+// Packs an array of small text units (sentences, or words as a fallback)
+// into token-budget-respecting pieces. Same accumulate-until-budget-then-
+// flush shape as groupIntoChunks itself — just operating on units of text
+// instead of units of Block.
+function packUnitsIntoPieces(units: string[]): string[] {
+  const pieces: string[] = []
+  let buffer: string[] = []
+  let bufferTokenCount = 0
+
+  for (const unit of units) {
+    const tokenCount = countTokens(unit)
+
+    if (bufferTokenCount + tokenCount > MAX_CHUNK_TOKENS && buffer.length > 0) {
+      pieces.push(buffer.join(' '))
+      buffer = []
+      bufferTokenCount = 0
+    }
+
+    buffer.push(unit)
+    bufferTokenCount += tokenCount
+  }
+
+  if (buffer.length > 0) {
+    pieces.push(buffer.join(' '))
+  }
+
+  return pieces
+}
+
+// A single block whose own text already exceeds the token budget can't
+// become one chunk without splitting the text itself. Break it into
+// sentences first (a natural boundary), and only fall back to splitting
+// by word if a single sentence is still oversized on its own.
+function splitOversizedBlock(block: Block, startingChunkIndex: number): Chunk[] {
+  let pieces = packUnitsIntoPieces(splitIntoSentences(block.text))
+
+  // Rare case: one sentence, by itself, is still over budget. Re-split
+  // just that piece by word instead of leaving it oversized.
+  pieces = pieces.flatMap((piece) =>
+    countTokens(piece) > MAX_CHUNK_TOKENS ? packUnitsIntoPieces(splitIntoWords(piece)) : [piece]
+  )
+
+  const chunks: Chunk[] = []
+  // Approximate — the original whitespace between sentences/words isn't
+  // preserved exactly once rejoined with a single space, so these offsets
+  // land close to, but not always pixel-exact with, the source PDF.
+  let charOffset = block.charStart
+
+  for (let i = 0; i < pieces.length; i++) {
+    const piece = pieces[i] ?? ''
+    const charStart = charOffset
+    const charEnd = charStart + piece.length
+
+    chunks.push({
+      content: piece,
+      page: block.page,
+      charStart,
+      charEnd,
+      chunkIndex: startingChunkIndex + i,
+    })
+
+    charOffset = charEnd + 1
+  }
+
+  return chunks
+}
+
 export function groupIntoChunks(blocks: Block[]): Chunk[] {
     const chunks: Chunk[] = []
 
@@ -64,14 +147,24 @@ export function groupIntoChunks(blocks: Block[]): Chunk[] {
     for (const block of blocks) {
         const tokenCount = countTokens(block.text)
 
+        // This one block's own text already exceeds the budget — close
+        // off whatever's buffered so far (it shouldn't get merged with
+        // this block), split this block into several smaller chunks on
+        // its own, and move on without adding it to the normal buffer.
+        if (tokenCount > MAX_CHUNK_TOKENS) {
+            flushBuffer()
+            const oversizedChunks = splitOversizedBlock(block, chunkIndex)
+            chunks.push(...oversizedChunks)
+            chunkIndex += oversizedChunks.length
+            continue
+        }
+
         // Would adding this block push the running total past the budget?
         // Note this compares against bufferTokenCount (tokens already
         // accumulated), not buffer.length (block count) — those are
         // different units entirely. `buffer.length > 0` guards against
-        // flushing an already-empty buffer when a single block alone
-        // exceeds the budget (that oversized-block case needs its own
-        // fallback later — for now it just becomes its own, still
-        // oversized, chunk).
+        // flushing an already-empty buffer, which can't happen here since
+        // the oversized case above already handled that possibility.
         if (bufferTokenCount + tokenCount > MAX_CHUNK_TOKENS && buffer.length > 0) {
             flushBuffer()
         }
