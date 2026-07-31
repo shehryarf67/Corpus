@@ -58,8 +58,14 @@ function packUnitsIntoPieces(units: string[]): string[] {
 
     if (bufferTokenCount + tokenCount > MAX_CHUNK_TOKENS && buffer.length > 0) {
       pieces.push(buffer.join(' '))
-      buffer = []
-      bufferTokenCount = 0
+
+      // Carry the last unit of the piece just flushed into the next one,
+      // instead of starting completely empty. A piece that begins
+      // mid-thought (e.g. "This resulted in...") still has the sentence
+      // it depends on for context, rather than losing it to the split.
+      const lastUnit = buffer[buffer.length - 1] ?? ''
+      buffer = lastUnit ? [lastUnit] : []
+      bufferTokenCount = lastUnit ? countTokens(lastUnit) : 0
     }
 
     buffer.push(unit)
@@ -87,9 +93,10 @@ function splitOversizedBlock(block: Block, startingChunkIndex: number): Chunk[] 
   )
 
   const chunks: Chunk[] = []
-  // Approximate — the original whitespace between sentences/words isn't
-  // preserved exactly once rejoined with a single space, so these offsets
-  // land close to, but not always pixel-exact with, the source PDF.
+  // Approximate, for two reasons: the original whitespace between
+  // sentences/words isn't preserved exactly once rejoined with a single
+  // space, and consecutive pieces now share an overlapping sentence — so
+  // these offsets land close to, but not pixel-exact with, the source PDF.
   let charOffset = block.charStart
 
   for (let i = 0; i < pieces.length; i++) {
