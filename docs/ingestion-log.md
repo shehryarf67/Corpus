@@ -212,6 +212,73 @@ Verified end to end: hit `/api/generate` directly with curl first to confirm the
 
 ---
 
+## embed.ts (server/src/lib/pdf/embed.ts) — the actual embedding step of ingestion
+
+This is separate from swapping embeddings.ts to a local model (that was just the raw tool). This is the actual pipeline step: take Chunk[] from chunk.ts, produce EmbeddedChunk[] (Chunk & { embedding: number[] }), ready to persist.
+
+### EmbeddedChunk type and why embedding is number[], not a single number
+
+An embedding IS an array of numbers, not one number. Our local model outputs 384 dimensional vectors, so one embedding is 384 floats together, representing one point in 384 dimensional space. "One vector per chunk" and "that vector is an array of 384 numbers" are the same fact, not two different things. `EmbeddedChunk = Chunk & { embedding: number[] }`, same "extend the previous stage's type" pattern as Chunk extending from Block info.
+
+### Batching, again, but for a different reason than chunk.ts's batching
+
+chunk.ts batches (packs blocks into token budgets) because of embedding model input limits. This is different: `embed()` accepts an array of texts and processes them together, calling it once per chunk in a loop instead of once per BATCH of chunks throws away that throughput benefit for no reason, especially now that its free/local (still worth doing efficiently, just not for cost/rate-limit reasons anymore). Grouped chunks into batches of 32 (BATCH_SIZE), one `embed()` call per batch instead of per chunk.
+
+Loop shape: `for (let i = 0; i < chunks.length; i += BATCH_SIZE)`, slicing `chunks.slice(i, i + BATCH_SIZE)` each time. `.slice()` handles the boundary case for free, no special code needed: asking for a range past the array's actual end just silently returns fewer elements than requested (not an error, not padded with undefined). So the very last batch is naturally whatever's left over (e.g. 8 chunks if total was 40 and BATCH_SIZE is 32), same code path as every other batch.
+
+### First attempt used `export default`
+
+Caught this because literally nothing else in this whole project uses a default export, only named exports (`extractTextRuns`, `layoutText`, `groupIntoChunks`, `countTokens`, all named). Would have made this the one inconsistent import in the whole codebase (`import embedChunks from` instead of `import { embedChunks } from`). Fixed to a named export.
+
+### Verifying ordering: a red herring at first
+
+Tested whether `embeddings[j]` really lines up with `batch[j]` (matching vectors back to the right chunk by array position). First test compared a chunk's embedding (produced inside a 3-item batch) against the SAME text embedded completely alone (a 1-item batch), got distance 0.13, not 0. Looked like a bug at first. Turned out to just be harmless batching noise: different batch compositions can produce tiny floating point differences internally (padding-related), nothing to do with ordering being wrong. Re-tested comparing against the SAME batch composition (3 words embedded together, compared against that same 3-item batch's output) and got distance exactly 0, confirming ordering is correct. Lesson: isolate one variable at a time when a test result looks surprising, don't assume the first explanation (bug) over a simpler one (test design difference) without checking.
+
+Also confirmed the multi-batch boundary for real (not just reasoned about): ran embedChunks against 40 fake chunks (forces a 32 + 8 split), got 40 back, correct order, correct dims. This was worth doing specifically because the real test PDF only ever produces ~22 chunks, under BATCH_SIZE, so every real run so far had only ever gone through ONE batch — the multi-batch path had literally never executed until this check.
+
+### Testing
+
+Wrote embed.test.ts: well formed output (right count, right dims, real numbers not NaN), original chunk fields preserved alongside the new embedding field, ordering preserved in a single batch, ordering AND count preserved across the batch boundary (the 40-chunk case made permanent instead of a scratch script), and a sanity check that two genuinely different sentences don't produce near identical vectors (catches a degenerate "always returns the same thing" failure mode). Since this is local/free now, tests call the real model directly, no mocking needed, unlike what we'd have had to do for a paid API.
+
+All 16 tests across extract/layout/chunk/embed pass together.
+
+---
+
+## Persistence phase (starting)
+
+Goal: take a document_id + EmbeddedChunk[], write real rows into `documents` and `chunks`.
+
+### What "the document" row actually is
+
+Metadata ABOUT the uploaded file, not the file itself and not its content. From the original schema: id (UUID, db generated), title, filename, mime_type, metadata (JSONB, empty by default), uploaded_at. Chunk text lives in `chunks`, not here.
+
+Real gap noticed while going through this: nothing in the current schema stores the actual original PDF bytes anywhere (no file path, no blob column, no S3 reference). Only extracted/chunked text ends up persisted. The readme promises clicking a citation opens "the highlighted source in the original PDF" — that needs the original file to still exist somewhere later, which currently it doesn't. Logged as an open item, not solved yet.
+
+### Why we need Documents AND Chunks, not just Chunks
+
+`chunks.document_id` is a real foreign key: `REFERENCES documents(id) ON DELETE CASCADE`. Postgres will flatly reject inserting a chunk whose document_id doesn't already exist as a real row in `documents`. So order matters: create the document row first (get back its generated id via `RETURNING id`), only then insert chunks using that id. Can't skip straight to chunks, thered be nothing valid to attach them to.
+
+### Why Documents/Chunks helpers are separate from the existing Jobs helper
+
+Jobs (already built, way earlier) tracks ingestion PROCESSING STATUS (pending/parsing/embedding/done/failed) for a document, scoped only to the `jobs` table, knows nothing about documents or chunks tables. Documents/Chunks will track actual CONTENT, each scoped to their own table, same one-helper-per-table pattern. All three share the same `pool` connection but never reach into each other's territory.
+
+### DocumentRow / ChunkRow types — separate from the pipeline's own Chunk type
+
+Same reason Job already exists as its own type: describes what a row ACTUALLY looks like coming back from a query, not the in-memory shape used elsewhere. Two real reasons this has to be a separate type from chunk.ts's `Chunk`, not just reused:
+
+1. Naming convention: real DB columns are snake_case (chunk_index, page_number, char_start, char_end, document_id, created_at) since `pg` returns whatever the actual SQL column names are, no auto camelCase conversion. `Chunk` (the pipeline type) is deliberately camelCase, matching the rest of this codebase's TS convention. Two different naming conventions for two different representations.
+2. Field mismatch: a real chunk row also has `id`, `document_id`, `created_at`, none of which the pipeline's `Chunk`/`EmbeddedChunk` ever carries, since those are either db-generated or only attached at persistence time.
+
+Named the new type `ChunkRow` (not `Chunk`) specifically to avoid clashing with the existing import. Also noted: pgvector's VECTOR column comes back from `pg` as a raw text string (like `"[0.1,0.2,...]"`), not a parsed number[] — `pg` has no built in understanding of the vector type, same gotcha applies going the other way when INSERTing (have to format a number[] into that bracketed string format ourselves before it can go into a query parameter).
+
+Added `DocumentRow` and `ChunkRow` to db.ts, next to the existing `Job` type. Just the types for now, not the actual Documents/Chunks query helpers yet.
+
+### Learning note: what a TS type is actually for (JS learning aside)
+
+Came up while defining these types: a type doesn't make data extraction happen, plain JS + `pg` + SQL already does that regardless of any type annotation. TypeScript types are erased completely at compile time — the actual running JS never sees them. What a type actually buys you: the compiler/editor can check your code against the expected shape BEFORE running it (autocomplete, catching a typo'd field name immediately) instead of finding out at runtime via a silent `undefined` or a crash later on. `pool.query<ChunkRow>(...)` vs `pool.query(...)` returns the exact same real data either way, the difference is entirely about whether mistakes get caught early or late.
+
+---
+
 ## Open items / not done yet
 
 - MAX_CHUNK_TOKENS = 500 is a guess, not measured. Once the readme's eval harness (recall@k, MRR) exists, should actually test different values against real retrieval quality instead of assuming 500 is right. Revisit this later, not now.
@@ -219,5 +286,8 @@ Verified end to end: hit `/api/generate` directly with curl first to confirm the
 - char offsets inside splitOversizedBlock are approximate (rejoining sentences/words with a single space doesnt preserve original whitespace exactly, and now overlap means consecutive pieces share text too), not pixel exact against the source pdf. Acceptable for now.
 - The actual "call layoutText, then groupIntoChunks, then embed, then persist" orchestration doesnt exist anywhere yet. That's the ingestion worker, not built. Needs the `jobs` table (already migrated) wired up to a real background process.
 - generation.ts has no error handling yet for Ollama not running / model not pulled beyond a generic thrown error on a bad response. Fine for now, worth revisiting once this is wired into a real request path.
-- Generation module (Ollama) not built yet, waiting on Ollama install.
 - If ever revisited: swap local embeddings back to Voyage and local generation back to Claude for a "production mode", since the rest of the pipeline (chunking, schema) barely needs to change either way.
+- No storage anywhere for the original uploaded PDF file/bytes. Needed for the "click citation, open highlighted source PDF" feature from the readme. Not solved yet, needs a decision (filesystem path? object storage like S3? a column on documents?).
+- Documents/Chunks helpers: only the row TYPES exist so far (DocumentRow, ChunkRow in db.ts). The actual create/insert functions (Documents.create, Chunks.insertMany) not written yet.
+- Vector-to-text formatting for INSERTing embeddings (number[] -> "[0.1,0.2,...]" string) not implemented or verified yet.
+- No decision yet on how persistence gets tested (real inserts + cleanup, vs wrapping each test in a transaction that gets rolled back). Leaning toward the rollback approach but not decided.
