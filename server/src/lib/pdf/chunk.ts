@@ -29,7 +29,7 @@ export function countTokens(text: string): number {
 const CHUNK_SEPARATOR = '\n\n'
 const SEPARATOR_TOKEN_COUNT = countTokens(CHUNK_SEPARATOR)
 
-type Chunk = {
+export type Chunk = {
   content: string
   page: number
   charStart: number
