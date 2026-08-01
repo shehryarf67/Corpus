@@ -200,9 +200,15 @@ Kept the `embed(texts, inputType)` function signature the same as before (`input
 
 Verified: ran the migration, confirmed via `pg_attribute` that the column is actually `vector(384)` now, and ran the embed function against a real string, got back a 384-length array of numbers. No cost, no API key needed for any of this.
 
-### Generation: Claude -> Ollama (not built yet)
+### Generation: Claude -> Ollama (done)
 
-Ollama is a separate desktop app (not an npm package) that runs open models like Llama 3.x locally and exposes a local HTTP API on `localhost:11434`. Waiting on it to finish installing before writing the actual generation module, since there's nothing to call yet without it running. Plan is a new file mirroring `embeddings.ts`'s role, just for chat completion instead of embeddings.
+Ollama is a separate desktop app (not an npm package) that runs open models locally and exposes a local HTTP API on `localhost:11434`. Installed it, pulled `llama3.2` (3.2B params, ~2GB) via `ollama pull llama3.2`.
+
+Roadblock: right after installing, `ollama` wasn't recognized in the already-open terminal (`command not found`). Not a real problem, just PATH not being picked up by a shell that was already open before the installer ran — confirmed the app itself was actually running and reachable by hitting `http://localhost:11434` directly and by calling the exe via its full install path (`C:\Users\sofia\AppData\Local\Programs\Ollama\ollama.exe`) instead of waiting on PATH.
+
+Wrote `server/src/lib/generation.ts`, mirroring `embeddings.ts`'s role: one exported function, `chat(messages)`, calling Ollama's `/api/chat` endpoint. Deliberately used the chat endpoint (`{role, content}[]` messages) instead of the simpler `/api/generate` (single flat prompt string) — chat shape is what the eventual RAG generation step actually needs (a system prompt plus a user question), same reasoning as keeping `embed()`'s document/query distinction even after swapping the backend.
+
+Verified end to end: hit `/api/generate` directly with curl first to confirm the model responds at all, then wrote and ran `chat()` against a real question ("what is the capital of France") and got back a real, correct answer through the actual module, not just the raw API.
 
 ---
 
@@ -212,5 +218,6 @@ Ollama is a separate desktop app (not an npm package) that runs open models like
 - No overlap between NORMAL chunk boundaries (between different blocks), only inside splitOversizedBlock. Decided on purpose, paragraph boundaries are real breaks, not worth the complexity there.
 - char offsets inside splitOversizedBlock are approximate (rejoining sentences/words with a single space doesnt preserve original whitespace exactly, and now overlap means consecutive pieces share text too), not pixel exact against the source pdf. Acceptable for now.
 - The actual "call layoutText, then groupIntoChunks, then embed, then persist" orchestration doesnt exist anywhere yet. That's the ingestion worker, not built. Needs the `jobs` table (already migrated) wired up to a real background process.
+- generation.ts has no error handling yet for Ollama not running / model not pulled beyond a generic thrown error on a bad response. Fine for now, worth revisiting once this is wired into a real request path.
 - Generation module (Ollama) not built yet, waiting on Ollama install.
 - If ever revisited: swap local embeddings back to Voyage and local generation back to Claude for a "production mode", since the rest of the pipeline (chunking, schema) barely needs to change either way.
