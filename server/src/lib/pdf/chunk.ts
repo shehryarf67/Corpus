@@ -20,6 +20,15 @@ export function countTokens(text: string): number {
   return encoder.encode(text).length;
 }
 
+// The separator joined between blocks' text when building a chunk's final
+// content (see flushBuffer below). Its own tokens weren't being counted
+// during accumulation — only each block's text in isolation — so a chunk's
+// real token count could end up slightly higher than the running total
+// used to decide when to flush. Computed once since the string never
+// changes, same reasoning as the encoder singleton above.
+const CHUNK_SEPARATOR = '\n\n'
+const SEPARATOR_TOKEN_COUNT = countTokens(CHUNK_SEPARATOR)
+
 type Chunk = {
   content: string
   page: number
@@ -139,7 +148,7 @@ export function groupIntoChunks(blocks: Block[]): Chunk[] {
         if (!first || !last) return
 
         chunks.push({
-            content: buffer.map((block) => block.text).join('\n\n'),
+            content: buffer.map((block) => block.text).join(CHUNK_SEPARATOR),
             page: first.page,
             charStart: first.charStart,
             charEnd: last.charEnd,
@@ -166,18 +175,28 @@ export function groupIntoChunks(blocks: Block[]): Chunk[] {
             continue
         }
 
-        // Would adding this block push the running total past the budget?
-        // Note this compares against bufferTokenCount (tokens already
-        // accumulated), not buffer.length (block count) — those are
-        // different units entirely. `buffer.length > 0` guards against
-        // flushing an already-empty buffer, which can't happen here since
-        // the oversized case above already handled that possibility.
-        if (bufferTokenCount + tokenCount > MAX_CHUNK_TOKENS && buffer.length > 0) {
+        // A separator only appears *between* blocks — an empty buffer's
+        // first block doesn't cost one. Checked here, before any flush,
+        // to decide whether adding this block would overflow.
+        const separatorCostBeforeFlush = buffer.length > 0 ? SEPARATOR_TOKEN_COUNT : 0
+
+        // Would adding this block (plus its separator, if any) push the
+        // running total past the budget? Note this compares against
+        // bufferTokenCount (tokens already accumulated), not buffer.length
+        // (block count) — those are different units entirely. `buffer.length
+        // > 0` guards against flushing an already-empty buffer, which can't
+        // happen here since the oversized case above already handled that
+        // possibility.
+        if (bufferTokenCount + separatorCostBeforeFlush + tokenCount > MAX_CHUNK_TOKENS && buffer.length > 0) {
             flushBuffer()
         }
 
+        // Re-checked rather than reusing separatorCostBeforeFlush — a flush
+        // may have just emptied the buffer, in which case this block is now
+        // the first one in a fresh buffer and doesn't cost a separator.
+        const separatorCost = buffer.length > 0 ? SEPARATOR_TOKEN_COUNT : 0
         buffer.push(block)
-        bufferTokenCount += tokenCount
+        bufferTokenCount += tokenCount + separatorCost
     }
 
     // Same as every other accumulator in this pipeline: the loop only
