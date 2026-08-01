@@ -164,15 +164,28 @@ Fix: computed SEPARATOR_TOKEN_COUNT once (same reasoning as the encoder, the sep
 
 Subtle bit that tripped me up while explaining it: the separator cost has to be computed TWICE, once before the flush check and once after, because a flush in between can change whether buffer is empty. Reusing the pre-flush value after a flush just happened would be wrong (would think a separator is needed for the first block of a brand new chunk, when it isnt). Not redundant duplication, its checking two different points in time.
 
-### Testing note
+### Bug found while writing chunk.test.ts: chunks could span pages
 
-Never got as far as writing a formal chunk.test.ts (unlike extract.ts and layout.ts), verification so far has all been throwaway scratch scripts. Worth doing properly before moving further (embedding stage).
+While setting up hand crafted Block fixtures for the test, checked a simple case first: two small blocks, page 1 and page 2, both way under the token budget. Expected 2 chunks (one per page), actually got 1. groupIntoChunks had no check for page changes at all, only ever checked the token budget. Two blocks from different pages could get merged into one chunk if they fit together token wise, and the resulting chunk's `page` field would just silently report whichever page the FIRST block was on, dropping the fact that some of its content actually came from a different page.
+
+This is exactly the same design decision made (but apparently never actually implemented) back in the very first chunking guide: chunks table has one page_number column per row, so a chunk cant honestly represent content from two pages.
+
+Fix: added a `pageChanged` check (`buffer.length > 0 && buffer[last].page !== block.page`) that forces a flush regardless of whether the token budget would otherwise allow combining, same shape as the existing overflow check, just OR'd together (`(pageChanged || overflowsBudget) && buffer.length > 0`).
+
+Lesson: this is a good example of why the "write the test first" instinct matters, found this by literally trying to construct a simple fixture for a different test, not by carefully auditing the code. Good reminder to actually try edge cases by hand instead of assuming a decision made in a discussion actually made it into the code.
+
+### Testing
+
+Wrote chunk.test.ts. Covers: small same page blocks combine into one chunk, a page change forces a new chunk even when tokens would allow combining (the regression test for the bug above), no chunk exceeds MAX_CHUNK_TOKENS even when a source block does, chunkIndex stays sequential across a mix of normal and oversized chunks, and an end to end check against the real fixture pdf (layoutText -> groupIntoChunks) confirming every real chunk respects the budget. Exported MAX_CHUNK_TOKENS from chunk.ts so the test references the real constant instead of duplicating the number 500 separately.
+
+Used a `makeBlock()` helper in the test file to build fake Block objects without touching a real PDF, this is the actual payoff of the earlier decision to keep groupIntoChunks decoupled from layoutText, wouldnt have been possible to test the page boundary bug this cleanly (or at all, easily) if chunk.ts had been coupled to calling layoutText itself.
+
+All 11 tests across the three files (extract, layout, chunk) pass after this.
 
 ---
 
 ## Open items / not done yet
 
-- chunk.test.ts doesnt exist yet, should be added (mirror extract.test.ts / layout.test.ts style).
 - MAX_CHUNK_TOKENS = 500 is a guess, not measured. Once the readme's eval harness (recall@k, MRR) exists, should actually test different values against real retrieval quality instead of assuming 500 is right. Revisit this later, not now.
 - No overlap between NORMAL chunk boundaries (between different blocks), only inside splitOversizedBlock. Decided on purpose, paragraph boundaries are real breaks, not worth the complexity there.
 - char offsets inside splitOversizedBlock are approximate (rejoining sentences/words with a single space doesnt preserve original whitespace exactly, and now overlap means consecutive pieces share text too), not pixel exact against the source pdf. Acceptable for now.

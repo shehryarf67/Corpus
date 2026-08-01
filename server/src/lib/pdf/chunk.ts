@@ -14,7 +14,7 @@ import { get_encoding } from "tiktoken";
 // done with it" happens.
 const encoder = get_encoding("cl100k_base");
 
-const MAX_CHUNK_TOKENS  = 500
+export const MAX_CHUNK_TOKENS = 500
 
 export function countTokens(text: string): number {
   return encoder.encode(text).length;
@@ -180,6 +180,12 @@ export function groupIntoChunks(blocks: Block[]): Chunk[] {
         // to decide whether adding this block would overflow.
         const separatorCostBeforeFlush = buffer.length > 0 ? SEPARATOR_TOKEN_COUNT : 0
 
+        // A chunk can't span pages — the `chunks` table has one page_number
+        // column per row, same reasoning as blocks not spanning pages in
+        // layout.ts. A page change forces a flush regardless of whether the
+        // token budget would otherwise allow adding this block.
+        const pageChanged = buffer.length > 0 && buffer[buffer.length - 1]?.page !== block.page
+
         // Would adding this block (plus its separator, if any) push the
         // running total past the budget? Note this compares against
         // bufferTokenCount (tokens already accumulated), not buffer.length
@@ -187,7 +193,8 @@ export function groupIntoChunks(blocks: Block[]): Chunk[] {
         // > 0` guards against flushing an already-empty buffer, which can't
         // happen here since the oversized case above already handled that
         // possibility.
-        if (bufferTokenCount + separatorCostBeforeFlush + tokenCount > MAX_CHUNK_TOKENS && buffer.length > 0) {
+        const overflowsBudget = bufferTokenCount + separatorCostBeforeFlush + tokenCount > MAX_CHUNK_TOKENS
+        if ((pageChanged || overflowsBudget) && buffer.length > 0) {
             flushBuffer()
         }
 
