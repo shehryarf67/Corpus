@@ -184,10 +184,33 @@ All 11 tests across the three files (extract, layout, chunk) pass after this.
 
 ---
 
+## Switching off paid APIs: local embeddings + Ollama (instead of Voyage + Claude)
+
+Decided not to pay for API usage since this is a learning/portfolio project, not something that needs production quality. Going fully local instead: Ollama for generation (not built yet, waiting on Ollama install), a local embedding model for embeddings (done). Tradeoff accepted on purpose: quality drops vs Voyage/Claude, but zero ongoing cost and no API key needed. Documented as a "future upgrade path" rather than a permanent decision, since swapping back to Voyage/Claude later is just swapping these two modules again.
+
+Also worth remembering the actual distinction that started this: a Claude.ai Pro/Max subscription and the Claude API are completely separate billing systems. Having a personal subscription doesnt give free API usage. The API is metered pay-per-token, billed to whoever's API key is in `.env`, separate from any chat subscription.
+
+### Embeddings: Voyage -> local model (done)
+
+Swapped `embeddings.ts` from calling Voyage's hosted API to running a model locally via `@xenova/transformers` (`Xenova/all-MiniLM-L6-v2`), entirely inside the Node process, no network call, no API key.
+
+Real gotcha found immediately: Voyage's `voyage-3` outputs 1024-dim vectors, which is why the `chunks` table schema had `embedding VECTOR(1024)` from the very first migration. MiniLM outputs 384-dim vectors instead. Swapping the embedding model changes the vector dimension, which means the DB column has to change too, or every insert would fail with a dimension mismatch. Added `003_alter_embedding_dim.sql`: `ALTER TABLE chunks ALTER COLUMN embedding TYPE VECTOR(384)`, plus had to drop and recreate the HNSW index since it's built for a specific dimension and doesnt auto-rebuild when the column type changes.
+
+Kept the `embed(texts, inputType)` function signature the same as before (`inputType: 'document' | 'query'`) even though the local model has no separate query/document mode and ignores that parameter now — did this so nothing calling `embed()` later needs to know or care which embedding backend is behind it.
+
+Verified: ran the migration, confirmed via `pg_attribute` that the column is actually `vector(384)` now, and ran the embed function against a real string, got back a 384-length array of numbers. No cost, no API key needed for any of this.
+
+### Generation: Claude -> Ollama (not built yet)
+
+Ollama is a separate desktop app (not an npm package) that runs open models like Llama 3.x locally and exposes a local HTTP API on `localhost:11434`. Waiting on it to finish installing before writing the actual generation module, since there's nothing to call yet without it running. Plan is a new file mirroring `embeddings.ts`'s role, just for chat completion instead of embeddings.
+
+---
+
 ## Open items / not done yet
 
 - MAX_CHUNK_TOKENS = 500 is a guess, not measured. Once the readme's eval harness (recall@k, MRR) exists, should actually test different values against real retrieval quality instead of assuming 500 is right. Revisit this later, not now.
 - No overlap between NORMAL chunk boundaries (between different blocks), only inside splitOversizedBlock. Decided on purpose, paragraph boundaries are real breaks, not worth the complexity there.
 - char offsets inside splitOversizedBlock are approximate (rejoining sentences/words with a single space doesnt preserve original whitespace exactly, and now overlap means consecutive pieces share text too), not pixel exact against the source pdf. Acceptable for now.
 - The actual "call layoutText, then groupIntoChunks, then embed, then persist" orchestration doesnt exist anywhere yet. That's the ingestion worker, not built. Needs the `jobs` table (already migrated) wired up to a real background process.
-- Embedding step itself (calling voyageai) not started.
+- Generation module (Ollama) not built yet, waiting on Ollama install.
+- If ever revisited: swap local embeddings back to Voyage and local generation back to Claude for a "production mode", since the rest of the pipeline (chunking, schema) barely needs to change either way.
