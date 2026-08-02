@@ -83,3 +83,117 @@ export const Jobs = {
     return rows[0]
   },
 }
+
+export const Documents = {
+  async create(title: string, filename: string, mimeType: string, metadata: Record<string, unknown>) {
+    const { rows } = await pool.query<DocumentRow>(
+      'INSERT INTO documents (title, filename, mime_type, metadata) VALUES ($1, $2, $3, $4) RETURNING *',
+      [title, filename, mimeType, metadata]
+    )
+    return rows[0]
+  },
+
+  async getById(id: string) {
+    const { rows } = await pool.query<DocumentRow>('SELECT * FROM documents WHERE id = $1', [id])
+    return rows[0] ?? null
+  },
+
+  async getAll() {
+    const { rows } = await pool.query<DocumentRow>('SELECT * FROM documents ORDER BY uploaded_at DESC')
+    return rows
+  }
+}
+
+// What insertMany needs per chunk. Deliberately not the pipeline's
+// EmbeddedChunk type — db.ts stays decoupled from the pdf/ folder, the
+// same way chunk.ts stays decoupled from layoutText. Whoever calls this
+// (the not-yet-written persistence orchestrator) is responsible for
+// mapping an EmbeddedChunk into this shape, including formatting the
+// embedding as pgvector's bracketed text string.
+type NewChunk = {
+  chunkIndex: number
+  content: string
+  pageNumber: number | null
+  charStart: number
+  charEnd: number
+  embedding: string | null
+}
+
+const CHUNK_COLUMNS_PER_ROW = 7
+
+export const Chunks = {
+  async insertMany(documentId: string, chunks: NewChunk[]): Promise<ChunkRow[]> {
+    if (chunks.length === 0) return []
+
+    // A transaction needs every statement to run on the SAME connection —
+    // pool.query() doesn't guarantee that (the pool can hand different
+    // calls to different connections), so a transaction needs its own
+    // checked-out client instead.
+    const client = await pool.connect()
+
+    try {
+      await client.query('BEGIN')
+
+      // Building one INSERT with multiple VALUES groups: ($1,...,$7),
+      // ($8,...,$14), etc. — one query, all rows, instead of one query
+      // per chunk. `values` is the flat parameter list matching those
+      // placeholders in order.
+      const placeholders: string[] = []
+      const values: unknown[] = []
+
+      chunks.forEach((chunk, i) => {
+        const offset = i * CHUNK_COLUMNS_PER_ROW
+        const placeholdersForRow = Array.from(
+          { length: CHUNK_COLUMNS_PER_ROW },
+          (_, j) => `$${offset + j + 1}`
+        )
+        placeholders.push(`(${placeholdersForRow.join(', ')})`)
+
+        values.push(
+          documentId,
+          chunk.chunkIndex,
+          chunk.content,
+          chunk.pageNumber,
+          chunk.charStart,
+          chunk.charEnd,
+          chunk.embedding
+        )
+      })
+
+      const { rows } = await client.query<ChunkRow>(
+        `INSERT INTO chunks (document_id, chunk_index, content, page_number, char_start, char_end, embedding)
+         VALUES ${placeholders.join(', ')}
+         RETURNING *`,
+        values
+      )
+
+      await client.query('COMMIT')
+      return rows
+    } catch (err) {
+      // Any chunk failing rolls back the whole batch — no half-inserted
+      // document left behind.
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      // Always release the client back to the pool, whether the
+      // transaction succeeded or failed — otherwise this connection is
+      // never returned and the pool slowly runs out of connections.
+      client.release()
+    }
+  },
+
+  async getByDocumentId(documentId: string) {
+    const { rows } = await pool.query<ChunkRow>('SELECT * FROM chunks WHERE document_id = $1 ORDER BY chunk_index ASC', [documentId])
+    return rows
+  },
+
+  async getById(id: string) {
+    const { rows } = await pool.query<ChunkRow>('SELECT * FROM chunks WHERE id = $1', [id])
+    return rows[0] ?? null
+  }, 
+
+  async getByDocumentIdAndIndex(documentId: string, chunkIndex: number) {
+    const { rows } = await pool.query<ChunkRow>('SELECT * FROM chunks WHERE document_id = $1 AND chunk_index = $2', [documentId, chunkIndex])
+    return rows[0] ?? null
+  }
+}

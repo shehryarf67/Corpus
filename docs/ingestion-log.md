@@ -277,6 +277,26 @@ Added `DocumentRow` and `ChunkRow` to db.ts, next to the existing `Job` type. Ju
 
 Came up while defining these types: a type doesn't make data extraction happen, plain JS + `pg` + SQL already does that regardless of any type annotation. TypeScript types are erased completely at compile time — the actual running JS never sees them. What a type actually buys you: the compiler/editor can check your code against the expected shape BEFORE running it (autocomplete, catching a typo'd field name immediately) instead of finding out at runtime via a silent `undefined` or a crash later on. `pool.query<ChunkRow>(...)` vs `pool.query(...)` returns the exact same real data either way, the difference is entirely about whether mistakes get caught early or late.
 
+### Documents and Chunks helpers written
+
+`Documents`: `create` (INSERT ... RETURNING *), `getById`, `getAll`. Straightforward, mirrors `Jobs`'s existing shape.
+
+`Chunks`: `getByDocumentId` (ordered by chunk_index), `getById`, `getByDocumentIdAndIndex`, plus the important one, `insertMany`.
+
+First draft of the insert was a single-row `create`, same shape as `Documents.create`. Changed to bulk `insertMany` on purpose, matching the persistence-phase plan from before: one multi-row INSERT for a whole document's chunks instead of one INSERT call per chunk in a loop, same throughput reasoning as batching `embed()` calls. Also wrapped in a real transaction (`BEGIN`/`COMMIT`/`ROLLBACK`) so a failure partway through rolls back the whole batch instead of leaving a half-inserted document — this needed its own checked-out client via `pool.connect()` rather than the shared `pool.query()`, since a transaction needs every statement on the same connection and the pool doesn't guarantee that otherwise. Always `client.release()` in a `finally`, success or failure, or the connection never goes back to the pool.
+
+Kept `Chunks.insertMany`'s input type (`NewChunk`) separate from the pipeline's `EmbeddedChunk` on purpose — db.ts stays decoupled from the pdf/ folder, same as every other module boundary in this project. Whatever eventually orchestrates persistence is responsible for mapping an `EmbeddedChunk` into this shape (including formatting the embedding into pgvector's text format), not db.ts.
+
+### Verified end to end against the real database
+
+Ran a real test: created a document, bulk-inserted 2 chunks, fetched them back, deleted the document (cascade deleted its chunks too, confirmed by the schema's `ON DELETE CASCADE`).
+
+First attempt used a fake 3-number placeholder vector (`[0.1,0.2,0.3]`) just to have something to pass — pgvector correctly rejected it: `expected 384 dimensions, not 3`. Not a bug, the opposite: confirms pgvector actually enforces the column's declared dimension at insert time, catching a bad vector before it ever gets stored. Real mistake in the test script though: it crashed before reaching its own cleanup step, leaving an orphaned `documents` row behind in the real database. Had to manually delete it afterward. Lesson: a test script's cleanup step has to be safe against the test itself failing (e.g. cleanup in a `finally`, or catch-and-cleanup-then-rethrow), otherwise a failing test is exactly the case most likely to skip its own teardown and leave real garbage behind — the one time you actually need cleanup to run is the time an unguarded script won't run it.
+
+Fixed the test with a real 384-number fake vector and reran — document created, both chunks inserted in one transaction, fetched back correctly, cleaned up successfully this time.
+
+Still missing before this is really "done": the actual `number[] -> "[0.1,0.2,...]"` conversion function doesn't exist as real code yet (the test inlined one by hand for the fake vector); and there's still no orchestrator function that takes real `EmbeddedChunk[]` from `embed.ts`, converts each one into `NewChunk` shape, and calls `Documents.create` + `Chunks.insertMany` for real. Also no permanent test file yet for any of this (`db.test.ts` or similar) — everything verified so far is a scratch script again, same situation `chunk.ts` and `embed.ts` were in before their tests were written.
+
 ---
 
 ## Open items / not done yet
@@ -288,6 +308,6 @@ Came up while defining these types: a type doesn't make data extraction happen, 
 - generation.ts has no error handling yet for Ollama not running / model not pulled beyond a generic thrown error on a bad response. Fine for now, worth revisiting once this is wired into a real request path.
 - If ever revisited: swap local embeddings back to Voyage and local generation back to Claude for a "production mode", since the rest of the pipeline (chunking, schema) barely needs to change either way.
 - No storage anywhere for the original uploaded PDF file/bytes. Needed for the "click citation, open highlighted source PDF" feature from the readme. Not solved yet, needs a decision (filesystem path? object storage like S3? a column on documents?).
-- Documents/Chunks helpers: only the row TYPES exist so far (DocumentRow, ChunkRow in db.ts). The actual create/insert functions (Documents.create, Chunks.insertMany) not written yet.
-- Vector-to-text formatting for INSERTing embeddings (number[] -> "[0.1,0.2,...]" string) not implemented or verified yet.
-- No decision yet on how persistence gets tested (real inserts + cleanup, vs wrapping each test in a transaction that gets rolled back). Leaning toward the rollback approach but not decided.
+- The number[] -> pgvector text string conversion function doesn't exist as real reusable code yet, only inlined by hand in a throwaway test.
+- No orchestrator yet tying EmbeddedChunk[] -> NewChunk[] -> Documents.create + Chunks.insertMany together into one real "persist this document" function.
+- No permanent test file for the Documents/Chunks db helpers yet (everything verified via scratch scripts so far). Still need to decide the testing strategy too: real inserts + manual cleanup, vs wrapping each test in a transaction that gets rolled back at the end. Leaning rollback, not decided.
