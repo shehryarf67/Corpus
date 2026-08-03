@@ -349,12 +349,19 @@ Important boundary: this function processes ONE known job. It does not receive u
 
 ---
 
+### PDF upload endpoint
+
+Added `POST /documents` in `server/src/routes/documents.ts` and mounted it from index.ts. It accepts multipart form data with a required `file` and optional `title`, converts the browser File into a Node Buffer, saves the original PDF, creates the document row, then creates a pending ingestion job. It returns HTTP 202 with the document id, job id, and pending status. It does not run ingestion itself.
+
+If setup fails after the file or document was created, the endpoint removes those partial results. This cleanup is needed because filesystem storage and Postgres cannot be covered by one shared transaction.
+
+---
+
 ## Open items / not done yet
 
 - MAX_CHUNK_TOKENS = 500 is a guess, not measured. Once the readme's eval harness (recall@k, MRR) exists, should actually test different values against real retrieval quality instead of assuming 500 is right. Revisit this later, not now.
 - No overlap between NORMAL chunk boundaries (between different blocks), only inside splitOversizedBlock. Decided on purpose, paragraph boundaries are real breaks, not worth the complexity there.
 - char offsets inside splitOversizedBlock are approximate (rejoining sentences/words with a single space doesnt preserve original whitespace exactly, and now overlap means consecutive pieces share text too), not pixel exact against the source pdf. Acceptable for now.
-- No upload endpoint yet to validate the request, call savePdf, create the document, create the pending job, and clean up the file/document if setup fails.
 - No background worker loop yet to safely claim pending jobs and call processIngestionJob. Safe claiming matters if two workers are ever running, otherwise both could process the same pending job.
 - Retrying a job is not idempotent yet. If chunks were inserted but marking the job done failed, retrying could hit duplicate chunk indexes. Before adding retries, decide whether to delete/rebuild that document's chunks or make persistence an atomic replace operation.
 - generation.ts has no error handling yet for Ollama not running / model not pulled beyond a generic thrown error on a bad response. Fine for now, worth revisiting once this is wired into a real request path.
