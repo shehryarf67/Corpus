@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "tsx watch --env-file=.env src/index.ts",
+    "worker": "tsx --env-file=.env src/worker.ts",
     "migrate": "tsx --env-file=.env scripts/migrate.ts",
     "test": "tsx --test --test-concurrency=1 src/**/*.test.ts",
     "test:db": "tsx --env-file=.env --test --test-concurrency=1 test/*.integration.test.ts"

@@ -357,12 +357,21 @@ If setup fails after the file or document was created, the endpoint removes thos
 
 ---
 
+### Background ingestion worker and safe claiming
+
+Added `Jobs.claimNextPending()`. It atomically selects the oldest pending ingest job and changes it to parsing. `FOR UPDATE SKIP LOCKED` means another worker skips a row already being claimed instead of processing the same document. The SQL stays in db.ts because the worker decides when it needs work, while db.ts owns how that database operation is performed safely.
+
+Added `server/src/worker.ts` and `npm run worker`. The worker continuously claims one job, passes its id to processIngestionJob, logs success or failure, then checks for the next job. If there is no work or the database temporarily fails, it waits one second before checking again. SIGINT and SIGTERM set a stopping flag so Ctrl+C finishes the current operation, exits the loop, and closes the database pool cleanly.
+
+The worker processes one job at a time for now. Safe claiming still matters because accidentally running the worker in two terminals would otherwise let both copies select the same pending row.
+
+---
+
 ## Open items / not done yet
 
 - MAX_CHUNK_TOKENS = 500 is a guess, not measured. Once the readme's eval harness (recall@k, MRR) exists, should actually test different values against real retrieval quality instead of assuming 500 is right. Revisit this later, not now.
 - No overlap between NORMAL chunk boundaries (between different blocks), only inside splitOversizedBlock. Decided on purpose, paragraph boundaries are real breaks, not worth the complexity there.
 - char offsets inside splitOversizedBlock are approximate (rejoining sentences/words with a single space doesnt preserve original whitespace exactly, and now overlap means consecutive pieces share text too), not pixel exact against the source pdf. Acceptable for now.
-- No background worker loop yet to safely claim pending jobs and call processIngestionJob. Safe claiming matters if two workers are ever running, otherwise both could process the same pending job.
 - Retrying a job is not idempotent yet. If chunks were inserted but marking the job done failed, retrying could hit duplicate chunk indexes. Before adding retries, decide whether to delete/rebuild that document's chunks or make persistence an atomic replace operation.
 - generation.ts has no error handling yet for Ollama not running / model not pulled beyond a generic thrown error on a bad response. Fine for now, worth revisiting once this is wired into a real request path.
 - If ever revisited: swap local embeddings back to Voyage and local generation back to Claude for a "production mode", since the rest of the pipeline (chunking, schema) barely needs to change either way.

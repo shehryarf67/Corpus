@@ -76,6 +76,28 @@ export const Jobs = {
     return rows[0] ?? null
   },
 
+  async claimNextPending() {
+    // Selecting and updating happen in one statement. FOR UPDATE prevents
+    // another worker from taking this row, while SKIP LOCKED lets that
+    // worker move on and look for a different pending job.
+    const { rows } = await pool.query<Job>(
+      `WITH next_job AS (
+         SELECT id
+         FROM jobs
+         WHERE status = 'pending' AND type = 'ingest'
+         ORDER BY created_at ASC
+         FOR UPDATE SKIP LOCKED
+         LIMIT 1
+       )
+       UPDATE jobs AS job
+       SET status = 'parsing', error = NULL
+       FROM next_job
+       WHERE job.id = next_job.id
+       RETURNING job.*`
+    )
+    return rows[0] ?? null
+  },
+
   async updateStatus(id: string, status: JobStatus, error: string | null = null) {
     const { rows } = await pool.query<Job>(
       'UPDATE jobs SET status = $2, error = $3 WHERE id = $1 RETURNING *',
