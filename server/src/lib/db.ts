@@ -110,7 +110,7 @@ export const Documents = {
 // (the not-yet-written persistence orchestrator) is responsible for
 // mapping an EmbeddedChunk into this shape, including formatting the
 // embedding as pgvector's bracketed text string.
-type NewChunk = {
+export type NewChunk = {
   chunkIndex: number
   content: string
   pageNumber: number | null

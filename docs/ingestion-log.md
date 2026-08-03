@@ -299,6 +299,18 @@ Still missing before this is really "done": the actual `number[] -> "[0.1,0.2,..
 
 ---
 
+### EmbeddedChunk to NewChunk persistence mapper
+
+Added `server/src/lib/pdf/persist.ts`. This is the real runtime conversion that the `NewChunk` type alone could never perform. `formatEmbeddingForPgvector` converts the local model's `number[]` vector into pgvector's bracketed text format. For example, `[0.1, -0.2]` becomes `"[0.1,-0.2]"`. `toNewChunks` maps each EmbeddedChunk field into the database-ready NewChunk shape, including `page -> pageNumber`. `persistEmbeddedChunks` connects that mapper directly to `Chunks.insertMany(documentId, ...)`, so callers can persist real EmbeddedChunk[] without manually formatting every vector.
+
+Exported `EmbeddedChunk` from embed.ts and `NewChunk` from db.ts so this boundary can be type checked cleanly without making db.ts import the PDF pipeline. Wrote `persist.test.ts` covering vector formatting, field mapping, and proving that mapping does not mutate the original EmbeddedChunk objects.
+
+Roadblock while verifying: the full test suite failed once when PDF test files ran concurrently and `pdfjs-dist` initialized in one process without its optional canvas polyfill (`DOMMatrix is not defined`). The mapper tests themselves were green. Running the complete suite sequentially passed 19/19, proving this was test concurrency and not an ingestion regression. Updated the npm test script to use `--test-concurrency=1` so the default suite is deterministic on this Windows setup.
+
+Still missing before persistence is fully done: the complete document-level orchestrator that creates the document row, runs layout/chunk/embed, calls persistEmbeddedChunks, and coordinates job status. There is also no permanent integration test for the real Documents/Chunks database helpers yet; persist.test.ts tests the conversion boundary without requiring Docker/Postgres.
+
+---
+
 ## Open items / not done yet
 
 - MAX_CHUNK_TOKENS = 500 is a guess, not measured. Once the readme's eval harness (recall@k, MRR) exists, should actually test different values against real retrieval quality instead of assuming 500 is right. Revisit this later, not now.
@@ -308,6 +320,5 @@ Still missing before this is really "done": the actual `number[] -> "[0.1,0.2,..
 - generation.ts has no error handling yet for Ollama not running / model not pulled beyond a generic thrown error on a bad response. Fine for now, worth revisiting once this is wired into a real request path.
 - If ever revisited: swap local embeddings back to Voyage and local generation back to Claude for a "production mode", since the rest of the pipeline (chunking, schema) barely needs to change either way.
 - No storage anywhere for the original uploaded PDF file/bytes. Needed for the "click citation, open highlighted source PDF" feature from the readme. Not solved yet, needs a decision (filesystem path? object storage like S3? a column on documents?).
-- The number[] -> pgvector text string conversion function doesn't exist as real reusable code yet, only inlined by hand in a throwaway test.
-- No orchestrator yet tying EmbeddedChunk[] -> NewChunk[] -> Documents.create + Chunks.insertMany together into one real "persist this document" function.
+- No complete document-level orchestrator yet tying Documents.create -> layoutText -> groupIntoChunks -> embedChunks -> persistEmbeddedChunks together into one real ingestion function.
 - No permanent test file for the Documents/Chunks db helpers yet (everything verified via scratch scripts so far). Still need to decide the testing strategy too: real inserts + manual cleanup, vs wrapping each test in a transaction that gets rolled back at the end. Leaning rollback, not decided.

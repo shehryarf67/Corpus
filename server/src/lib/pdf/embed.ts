@@ -1,7 +1,7 @@
 import type {Chunk} from './chunk.js';
 import {embed} from '../embeddings.js';
 
-type EmbeddedChunk = Chunk & {
+export type EmbeddedChunk = Chunk & {
   embedding: number[]
 }
 
