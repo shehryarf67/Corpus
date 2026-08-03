@@ -373,6 +373,16 @@ Added `GET /jobs/:jobId` in `server/src/routes/jobs.ts` and mounted it from inde
 
 ---
 
+### Complete HTTP to worker to Postgres ingestion verification
+
+Ran the real production path with the PDF fixture instead of calling processIngestionJob directly. Started the API and worker, uploaded the PDF through POST /documents, received document id `b9458dad-31ab-433f-8d61-6d2421090db1` and job id `f9189e33-5c80-4f3d-8729-9094719dff5c`, then checked GET /jobs/:jobId. The worker claimed the pending job and completed it in about five seconds with status done and no error.
+
+Queried Postgres directly afterward. The document has 22 chunks, all 22 embedding values are non-null, and every vector has exactly 384 dimensions. Chunk indexes run from 0 through 21 and page numbers cover pages 1 through 7. This confirms the complete path works: HTTP upload -> PDF storage -> document and pending job -> worker claim -> parsing/layout -> chunking -> local embedding -> bulk persistence -> done status.
+
+Core ingestion is now complete for the learning/portfolio MVP. Remaining items below are reliability improvements or broader PDF support, not missing links in the basic ingestion path.
+
+---
+
 ## Open items / not done yet
 
 - MAX_CHUNK_TOKENS = 500 is a guess, not measured. Once the readme's eval harness (recall@k, MRR) exists, should actually test different values against real retrieval quality instead of assuming 500 is right. Revisit this later, not now.
