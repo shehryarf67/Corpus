@@ -2,7 +2,7 @@
 
 This is just a running log of everything we figured out while building the ingestion pipeline (extract.ts, layout.ts, chunk.ts). Not a doc for anyone else, just so i can look back and remember where we got stuck and how we got out of it.
 
-Pipeline shape so far: PDF buffer -> extract.ts (raw text fragments) -> layout.ts (lines -> paragraphs -> blocks) -> chunk.ts (blocks -> token sized chunks). Next step after this is embedding + persistence, not built yet.
+Pipeline shape now: stored PDF -> ingestion job -> layout.ts (extracts and groups text into blocks) -> chunk.ts (blocks into token sized chunks) -> embed.ts (local vectors) -> persist.ts -> Postgres chunks. The upload/request entry point and background worker loop are still separate next steps.
 
 ---
 
@@ -337,12 +337,25 @@ Still not built: the upload endpoint that receives the PDF and calls savePdf, th
 
 ---
 
+### Ingestion orchestrator
+
+Added `server/src/services/ingestion.ts` with `processIngestionJob(jobId)`. The document row and job already exist before this function starts. It loads the job and document, changes the job to `parsing`, reads the stored PDF, runs layout and chunking, changes the job to `embedding`, embeds and persists all chunks, then marks the job `done`. It returns the document id and inserted chunk count.
+
+If any pipeline stage throws, the catch block records the job as `failed` with the error message and throws the original error again. An empty or image-only PDF is treated as a failure because it produces no extractable text chunks.
+
+Added `server/test/ingestion.integration.test.ts`. One test runs the real stored PDF through parsing, chunking, local embedding, and Postgres persistence, then verifies the final job and chunk rows. Another test proves a missing stored PDF marks the job as failed. `npm run test:db` now discovers every integration test in the test folder. Verification result: 22/22 unit tests and 4/4 database integration tests pass.
+
+Important boundary: this function processes ONE known job. It does not receive uploads, create document rows, create jobs, poll for pending jobs, or claim a job safely against another worker. Those belong to the upload endpoint and worker loop around it.
+
+---
+
 ## Open items / not done yet
 
 - MAX_CHUNK_TOKENS = 500 is a guess, not measured. Once the readme's eval harness (recall@k, MRR) exists, should actually test different values against real retrieval quality instead of assuming 500 is right. Revisit this later, not now.
 - No overlap between NORMAL chunk boundaries (between different blocks), only inside splitOversizedBlock. Decided on purpose, paragraph boundaries are real breaks, not worth the complexity there.
 - char offsets inside splitOversizedBlock are approximate (rejoining sentences/words with a single space doesnt preserve original whitespace exactly, and now overlap means consecutive pieces share text too), not pixel exact against the source pdf. Acceptable for now.
-- The actual "call layoutText, then groupIntoChunks, then embed, then persist" orchestration doesnt exist anywhere yet. That's the ingestion worker, not built. Needs the `jobs` table (already migrated) wired up to a real background process.
+- No upload endpoint yet to validate the request, call savePdf, create the document, create the pending job, and clean up the file/document if setup fails.
+- No background worker loop yet to safely claim pending jobs and call processIngestionJob. Safe claiming matters if two workers are ever running, otherwise both could process the same pending job.
+- Retrying a job is not idempotent yet. If chunks were inserted but marking the job done failed, retrying could hit duplicate chunk indexes. Before adding retries, decide whether to delete/rebuild that document's chunks or make persistence an atomic replace operation.
 - generation.ts has no error handling yet for Ollama not running / model not pulled beyond a generic thrown error on a bad response. Fine for now, worth revisiting once this is wired into a real request path.
 - If ever revisited: swap local embeddings back to Voyage and local generation back to Claude for a "production mode", since the rest of the pipeline (chunking, schema) barely needs to change either way.
-- No complete document-level orchestrator yet tying Documents.create -> layoutText -> groupIntoChunks -> embedChunks -> persistEmbeddedChunks together into one real ingestion function.
