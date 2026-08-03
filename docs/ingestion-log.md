@@ -311,6 +311,16 @@ Still missing before persistence is fully done: the complete document-level orch
 
 ---
 
+### Permanent database persistence integration test
+
+Added `server/test/persistence.integration.test.ts` plus a separate `npm run test:db` command. Kept this separate from `npm test` because it requires Docker, Postgres, applied migrations, and DATABASE_URL, while the normal unit tests should stay usable without database infrastructure.
+
+The first integration test creates a real temporary document, calls `persistEmbeddedChunks` with two real 384-dimensional vectors, verifies the returned and fetched chunk rows, deletes the document, and confirms `ON DELETE CASCADE` removed its chunks. The second test attempts a bulk insert with duplicate chunk indexes, confirms Postgres rejects it, and verifies zero chunks remain from the failed statement.
+
+Both tests put document cleanup inside `finally`, so cleanup still runs when an insert or assertion fails. The pool is closed in an `after` hook so the test process can exit cleanly. Verification result: 2/2 database integration tests pass, and the separate normal suite remains 19/19 passing.
+
+---
+
 ## Open items / not done yet
 
 - MAX_CHUNK_TOKENS = 500 is a guess, not measured. Once the readme's eval harness (recall@k, MRR) exists, should actually test different values against real retrieval quality instead of assuming 500 is right. Revisit this later, not now.
@@ -321,4 +331,3 @@ Still missing before persistence is fully done: the complete document-level orch
 - If ever revisited: swap local embeddings back to Voyage and local generation back to Claude for a "production mode", since the rest of the pipeline (chunking, schema) barely needs to change either way.
 - No storage anywhere for the original uploaded PDF file/bytes. Needed for the "click citation, open highlighted source PDF" feature from the readme. Not solved yet, needs a decision (filesystem path? object storage like S3? a column on documents?).
 - No complete document-level orchestrator yet tying Documents.create -> layoutText -> groupIntoChunks -> embedChunks -> persistEmbeddedChunks together into one real ingestion function.
-- No permanent test file for the Documents/Chunks db helpers yet (everything verified via scratch scripts so far). Still need to decide the testing strategy too: real inserts + manual cleanup, vs wrapping each test in a transaction that gets rolled back at the end. Leaning rollback, not decided.
