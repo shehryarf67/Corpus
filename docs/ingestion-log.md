@@ -367,6 +367,12 @@ The worker processes one job at a time for now. Safe claiming still matters beca
 
 ---
 
+### Job status endpoint
+
+Added `GET /jobs/:jobId` in `server/src/routes/jobs.ts` and mounted it from index.ts. It calls Jobs.getById and returns the job id, document id, type, current status, error, and timestamps. It returns 404 when the job does not exist and 500 when the database lookup fails. This route only reports progress; it never starts or changes ingestion.
+
+---
+
 ## Open items / not done yet
 
 - MAX_CHUNK_TOKENS = 500 is a guess, not measured. Once the readme's eval harness (recall@k, MRR) exists, should actually test different values against real retrieval quality instead of assuming 500 is right. Revisit this later, not now.
