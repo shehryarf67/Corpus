@@ -321,6 +321,22 @@ Both tests put document cleanup inside `finally`, so cleanup still runs when an 
 
 ---
 
+### Original PDF filesystem storage
+
+Chose local filesystem storage for this learning/portfolio version instead of storing PDF bytes in Postgres or using paid object storage. Added `004_document_storage.sql`, which adds nullable `documents.storage_key` plus a unique partial index. Kept it nullable because older document rows were created before file storage existed.
+
+Added `server/src/lib/storage.ts` with `savePdf`, `readPdf`, and `deletePdf`. Files are stored under `server/data/uploads` by default, while the database stores only a generated UUID filename such as `abc...123.pdf`, never an absolute Windows path or the user-supplied filename. `PDF_STORAGE_DIR` can override the base directory later without changing database rows.
+
+`savePdf` rejects empty files, files over the configured size limit (20 MB by default), and data without the `%PDF-` signature. It writes to a temporary file first and renames it to the final filename, reducing the chance of a worker reading a partially written PDF. Storage keys must match the server-generated UUID pattern, preventing path traversal such as `../outside.pdf`. `deletePdf` is idempotent through `force: true`.
+
+Updated `DocumentRow` with `storage_key: string | null` and updated `Documents.create` to accept and insert an optional storage key. Added the upload directory to `.gitignore` so uploaded documents are never committed.
+
+Added isolated filesystem tests using a temporary directory, plus a database integration assertion that Documents.create stores and returns the storage key. Applied migration 004 successfully. Verification result: 22/22 unit tests and 2/2 database integration tests pass.
+
+Still not built: the upload endpoint that receives the PDF and calls savePdf, the failure cleanup connecting file storage to document/job creation, and the worker that later calls readPdf.
+
+---
+
 ## Open items / not done yet
 
 - MAX_CHUNK_TOKENS = 500 is a guess, not measured. Once the readme's eval harness (recall@k, MRR) exists, should actually test different values against real retrieval quality instead of assuming 500 is right. Revisit this later, not now.
@@ -329,5 +345,4 @@ Both tests put document cleanup inside `finally`, so cleanup still runs when an 
 - The actual "call layoutText, then groupIntoChunks, then embed, then persist" orchestration doesnt exist anywhere yet. That's the ingestion worker, not built. Needs the `jobs` table (already migrated) wired up to a real background process.
 - generation.ts has no error handling yet for Ollama not running / model not pulled beyond a generic thrown error on a bad response. Fine for now, worth revisiting once this is wired into a real request path.
 - If ever revisited: swap local embeddings back to Voyage and local generation back to Claude for a "production mode", since the rest of the pipeline (chunking, schema) barely needs to change either way.
-- No storage anywhere for the original uploaded PDF file/bytes. Needed for the "click citation, open highlighted source PDF" feature from the readme. Not solved yet, needs a decision (filesystem path? object storage like S3? a column on documents?).
 - No complete document-level orchestrator yet tying Documents.create -> layoutText -> groupIntoChunks -> embedChunks -> persistEmbeddedChunks together into one real ingestion function.

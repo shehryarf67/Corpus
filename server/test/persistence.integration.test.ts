@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { after, test } from 'node:test'
 import { Chunks, Documents, pool } from '../src/lib/db.js'
 import type { EmbeddedChunk } from '../src/lib/pdf/embed.js'
@@ -28,13 +29,16 @@ test('persistEmbeddedChunks bulk inserts and retrieves real pgvector rows', asyn
   let documentId: string | undefined
 
   try {
+    const storageKey = `${randomUUID()}.pdf`
     const document = await Documents.create(
       'Persistence integration test',
       'persistence-test.pdf',
       'application/pdf',
-      { test: true }
+      { test: true },
+      storageKey
     )
     assert.ok(document)
+    assert.equal(document.storage_key, storageKey)
     documentId = document.id
 
     const inserted = await persistEmbeddedChunks(documentId, [

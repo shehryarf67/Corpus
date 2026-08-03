@@ -16,6 +16,7 @@ export type DocumentRow = {
   filename: string
   mime_type: string
   metadata: Record<string, unknown>
+  storage_key: string | null
   uploaded_at: string
 }
 
@@ -85,10 +86,18 @@ export const Jobs = {
 }
 
 export const Documents = {
-  async create(title: string, filename: string, mimeType: string, metadata: Record<string, unknown>) {
+  async create(
+    title: string,
+    filename: string,
+    mimeType: string,
+    metadata: Record<string, unknown> = {},
+    storageKey: string | null = null
+  ) {
     const { rows } = await pool.query<DocumentRow>(
-      'INSERT INTO documents (title, filename, mime_type, metadata) VALUES ($1, $2, $3, $4) RETURNING *',
-      [title, filename, mimeType, metadata]
+      `INSERT INTO documents (title, filename, mime_type, metadata, storage_key)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [title, filename, mimeType, metadata, storageKey]
     )
     return rows[0]
   },
