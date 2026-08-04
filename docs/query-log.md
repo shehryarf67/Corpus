@@ -53,3 +53,9 @@ Verification roadblock: the first database run could not connect because Docker 
 Ran POST /query against the fully ingested paper with the question: "What two networks are included in the proposed framework?" The endpoint embedded the question and returned five real chunks from the selected document. The relevant page 3 chunk states that the left side is the inner training network and the right side is the super network controlling bit assignment. It appeared at rank 4 with similarity about 0.219.
 
 Result: recall at 5 passed because the answer-bearing source was present in the top five, but ranking quality was only moderate because three chunks ranked above it and one of those was a clearly irrelevant reference fragment. This is a useful honest baseline: vector retrieval is functionally complete, but vector-only MiniLM retrieval is not automatically high precision. Context construction can proceed, while later hybrid keyword search, reranking, and retrieval evals should target this ranking weakness.
+
+---
+
+## Context construction test
+
+Added `context.test.ts` for buildContext. The main test supplies two RetrievedChunk objects and verifies that retrieval order is preserved, labels become S1 and S2, snake_case database fields map to camelCase source fields, a real page number is formatted correctly, a null page becomes `Page Unknown`, source sections are separated by two newlines, and similarity metadata is preserved. A second test verifies that no retrieved chunks produces an empty context string and empty sources array. TypeScript compilation passed and the targeted context suite passed 2/2.
