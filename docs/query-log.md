@@ -69,3 +69,13 @@ Added `lib/prompt.ts` with buildAnswerMessages(question, context). It returns th
 Exported ChatMessage from generation.ts so prompt.ts and chat() share one checked message shape. Also exported ContextSource and BuiltContext, then corrected the in-progress queryDocument result to return the built context and ContextSource array instead of an object property named retrievedChunks that did not match its declared return type. TypeScript compilation and the existing context tests pass.
 
 Added `prompt.test.ts`. It verifies that exactly two messages are produced in system/user order, the system message contains grounding, missing-answer, citation, and document-instruction safety rules, and the request-specific context and question appear only in the user message. A second test checks that empty context is preserved cleanly so queryDocument can handle the no-source case. TypeScript compilation passed and the prompt suite passed 2/2.
+
+---
+
+## Ollama answer generation wired into queryDocument
+
+queryDocument now continues after context construction: it calls buildAnswerMessages(question, context), passes those messages to the existing Ollama chat helper, and returns `{ answer, sources }`. If retrieval returns no chunks, it skips Ollama and returns a fixed no-searchable-content answer with an empty source list. The query route did not need generation logic because it already returns whatever queryDocument resolves to.
+
+TypeScript compilation passed and the focused context plus prompt suites passed 4/4. Ran a real POST /query request against the ingested paper using: "What two networks are included in the proposed framework?" Ollama produced the substantively correct answer: the inner training network and super network.
+
+The live test also found the next roadblock. Ollama cited `[S3 | Page 7]`, but S3 was an irrelevant reference fragment; the actual supporting result was S4 on page 3. It also copied the context header format instead of citing only `[S4]` as instructed. This proves generation is connected and can use retrieved content, but raw model-written citations cannot be trusted yet. The next step is to tighten citation formatting and add server-side citation extraction/validation so only labels that map to real supplied sources are accepted. Retrieval ranking also contributed because the correct source was only fourth.

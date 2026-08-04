@@ -1,9 +1,11 @@
 import { Chunks } from '../lib/db.js'
 import { embed } from '../lib/embeddings.js'
 import { buildContext, type ContextSource } from '../lib/context.js'
+import { chat } from '../lib/generation.js'
+import { buildAnswerMessages } from '../lib/prompt.js'
 
-export type QueryRetrievalResult = {
-  context: string
+export type QueryResult = {
+  answer: string
   sources: ContextSource[]
 }
 
@@ -13,7 +15,7 @@ export type QueryRetrievalResult = {
 export async function queryDocument(
   documentId: string,
   question: string
-): Promise<QueryRetrievalResult> {
+): Promise<QueryResult> {
   // embed() accepts an array because it also supports batches. A query has
   // one question, so its vector is the first item in the returned array.
   const embeddings = await embed([question], 'query')
@@ -29,8 +31,16 @@ export async function queryDocument(
   const {sources, context} = buildContext(retrievedChunks)
 
   if (sources.length === 0) {
-    throw new Error('No relevant chunks found for the given document and question')
+    return {
+      answer: 'I could not find any searchable content in this document.',
+      sources: [],
+    }
   }
 
-  return { context, sources }
+  // The prompt builder combines grounding instructions, labelled context,
+  // and the user's question into the messages expected by Ollama.
+  const messages = buildAnswerMessages(question, context)
+  const answer = await chat(messages)
+
+  return { answer, sources }
 }
