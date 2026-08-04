@@ -14,7 +14,15 @@ export async function chat(messages: ChatMessage[]): Promise<string> {
   const res = await fetch(`${OLLAMA_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, messages, stream: false }),
+    body: JSON.stringify({
+      model: MODEL,
+      messages,
+      stream: false,
+      // A grounded document answer benefits from consistency more than
+      // creativity. Temperature 0 reduces random wording and citation-label
+      // changes between otherwise identical requests.
+      options: { temperature: 0 },
+    }),
   })
 
   if (!res.ok) {

@@ -79,3 +79,13 @@ queryDocument now continues after context construction: it calls buildAnswerMess
 TypeScript compilation passed and the focused context plus prompt suites passed 4/4. Ran a real POST /query request against the ingested paper using: "What two networks are included in the proposed framework?" Ollama produced the substantively correct answer: the inner training network and super network.
 
 The live test also found the next roadblock. Ollama cited `[S3 | Page 7]`, but S3 was an irrelevant reference fragment; the actual supporting result was S4 on page 3. It also copied the context header format instead of citing only `[S4]` as instructed. This proves generation is connected and can use retrieved content, but raw model-written citations cannot be trusted yet. The next step is to tighten citation formatting and add server-side citation extraction/validation so only labels that map to real supplied sources are accepted. Retrieval ranking also contributed because the correct source was only fourth.
+
+---
+
+## Clearer source boundaries and deterministic generation
+
+Replaced context headers like `[S4 | Page 3]` with explicit `<source id="S4" page="3">...</source>` blocks. The wrapper makes source boundaries and metadata clearer while the prompt separately requires answer citations in the exact `[S4]` form. Added instructions not to copy the XML-like wrapper or include page numbers inside answer citations. Updated the context and prompt tests for the new format.
+
+Set Ollama temperature to 0 in generation.ts. Grounded document answering benefits from consistency rather than creative variation, so this reduces random wording and source-label changes between identical requests. It does not guarantee factual or citation correctness by itself.
+
+TypeScript compilation and the focused context/prompt suite passed 4/4. Repeated the exact same real question. The answer again correctly identified the inner network and super network, and source attribution improved from the wrong S3/page 7 to the correct S4/page 3. However, Ollama wrote `source id="S4", page=3` instead of the requested `[S4]`. The important evidence selection improved, but exact citation output still cannot be trusted without normalization and validation in server code.

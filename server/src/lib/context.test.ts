@@ -31,8 +31,8 @@ test('buildContext labels and formats retrieved chunks in ranking order', () => 
 
   assert.equal(
     result.context,
-    '[S1 | Page 3]\nThe inner network trains the model weights.\n\n' +
-      '[S2 | Page Unknown]\nThe super network controls bit assignment.'
+    '<source id="S1" page="3">\nThe inner network trains the model weights.\n</source>\n\n' +
+      '<source id="S2" page="Unknown">\nThe super network controls bit assignment.\n</source>'
   )
 
   assert.deepEqual(result.sources, [

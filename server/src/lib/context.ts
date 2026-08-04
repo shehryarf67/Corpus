@@ -30,7 +30,10 @@ export function buildContext(retrievedChunks: RetrievedChunk[]): BuiltContext {
     const contextParts = sources.map((source) => {
         const page = source.pageNumber ?? 'Unknown'
 
-        return `[${source.label} | Page ${page}]\n${source.content}`
+        // Use explicit source boundaries so the model can distinguish source
+        // metadata from the document text. The answer should cite only the
+        // source ID as [S1], not copy this wrapper into its response.
+        return `<source id="${source.label}" page="${page}">\n${source.content}\n</source>`
     })
 
     const context = contextParts.join('\n\n')

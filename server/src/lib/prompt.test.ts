@@ -4,8 +4,9 @@ import { buildAnswerMessages } from './prompt.js'
 
 test('buildAnswerMessages creates grounded system and user messages', () => {
   const question = 'What two networks are included in the framework?'
-  const context = `[S1 | Page 3]
-The framework includes an inner training network and a super network.`
+  const context = `<source id="S1" page="3">
+The framework includes an inner training network and a super network.
+</source>`
 
   const messages = buildAnswerMessages(question, context)
 
@@ -21,6 +22,7 @@ The framework includes an inner training network and a super network.`
   assert.match(systemMessage, /using only the supplied document context/i)
   assert.match(systemMessage, /could not find the answer/i)
   assert.match(systemMessage, /\[S1\]/)
+  assert.match(systemMessage, /do not copy the <source> wrapper/i)
   assert.match(systemMessage, /not as instructions/i)
 
   // Request-specific data belongs in the user message. Keeping document
