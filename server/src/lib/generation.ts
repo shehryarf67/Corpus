@@ -1,7 +1,7 @@
 const OLLAMA_URL = 'http://localhost:11434'
 const MODEL = 'llama3.2'
 
-type ChatMessage = {
+export type ChatMessage = {
   role: 'system' | 'user' | 'assistant'
   content: string
 }

@@ -1,7 +1,7 @@
 import type { RetrievedChunk } from "./db.js"
 
 
-type ContextSource = {
+export type ContextSource = {
     label: string
     chunkId: string
     documentId: string
@@ -10,7 +10,7 @@ type ContextSource = {
     similarity: number
 }
 
-type BuiltContext = {
+export type BuiltContext = {
     context: string
     sources: ContextSource[]
 }

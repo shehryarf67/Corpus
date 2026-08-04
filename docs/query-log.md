@@ -59,3 +59,13 @@ Result: recall at 5 passed because the answer-bearing source was present in the 
 ## Context construction test
 
 Added `context.test.ts` for buildContext. The main test supplies two RetrievedChunk objects and verifies that retrieval order is preserved, labels become S1 and S2, snake_case database fields map to camelCase source fields, a real page number is formatted correctly, a null page becomes `Page Unknown`, source sections are separated by two newlines, and similarity metadata is preserved. A second test verifies that no retrieved chunks produces an empty context string and empty sources array. TypeScript compilation passed and the targeted context suite passed 2/2.
+
+---
+
+## Answer prompt builder
+
+Added `lib/prompt.ts` with buildAnswerMessages(question, context). It returns the two ChatMessage objects expected by Ollama: a reusable system message containing grounding, insufficient-context, citation, and document prompt-injection rules, followed by a user message containing the labelled document context and question. The helper only builds messages and never calls Ollama.
+
+Exported ChatMessage from generation.ts so prompt.ts and chat() share one checked message shape. Also exported ContextSource and BuiltContext, then corrected the in-progress queryDocument result to return the built context and ContextSource array instead of an object property named retrievedChunks that did not match its declared return type. TypeScript compilation and the existing context tests pass.
+
+Added `prompt.test.ts`. It verifies that exactly two messages are produced in system/user order, the system message contains grounding, missing-answer, citation, and document-instruction safety rules, and the request-specific context and question appear only in the user message. A second test checks that empty context is preserved cleanly so queryDocument can handle the no-source case. TypeScript compilation passed and the prompt suite passed 2/2.

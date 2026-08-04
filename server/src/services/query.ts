@@ -1,8 +1,10 @@
-import { Chunks, type RetrievedChunk } from '../lib/db.js'
+import { Chunks } from '../lib/db.js'
 import { embed } from '../lib/embeddings.js'
+import { buildContext, type ContextSource } from '../lib/context.js'
 
 export type QueryRetrievalResult = {
-  sources: RetrievedChunk[]
+  context: string
+  sources: ContextSource[]
 }
 
 // This service coordinates the query pipeline. For now that pipeline ends
@@ -23,7 +25,12 @@ export async function queryDocument(
 
   // Postgres compares this question vector with the stored chunk vectors
   // and returns only the five closest chunks for the selected document.
-  const sources = await Chunks.searchSimilar(documentId, queryEmbedding, 5)
+  const retrievedChunks = await Chunks.searchSimilar(documentId, queryEmbedding, 5)
+  const {sources, context} = buildContext(retrievedChunks)
 
-  return { sources }
+  if (sources.length === 0) {
+    throw new Error('No relevant chunks found for the given document and question')
+  }
+
+  return { context, sources }
 }
