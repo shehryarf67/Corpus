@@ -1,4 +1,5 @@
-import type { RetrievedChunk } from "./db.js"
+import type { RetrievedChunk } from './db.js'
+import type { FusedChunk } from './rrf.js'
 
 
 export type ContextSource = {
@@ -7,7 +8,7 @@ export type ContextSource = {
     documentId: string
     pageNumber: number | null
     content: string
-    similarity: number
+    similarity: number | null
 }
 
 export type BuiltContext = {
@@ -15,7 +16,9 @@ export type BuiltContext = {
     sources: ContextSource[]
 }
 
-export function buildContext(retrievedChunks: RetrievedChunk[]): BuiltContext {
+export function buildContext(
+    retrievedChunks: Array<RetrievedChunk | FusedChunk>
+): BuiltContext {
     const sources = retrievedChunks.map((chunk, index) => {
         return {
             label: `S${index + 1}`,

@@ -4,32 +4,46 @@ import { buildContext, type ContextSource } from '../lib/context.js'
 import { chat } from '../lib/generation.js'
 import { buildAnswerMessages } from '../lib/prompt.js'
 import { validateCitations } from '../lib/citations.js'
+import { fuseWithRRF } from '../lib/rrf.js'
+
+const RETRIEVAL_CANDIDATE_LIMIT = 20
+const CONTEXT_SOURCE_LIMIT = 5
 
 export type QueryResult = {
   answer: string
   sources: ContextSource[]
 }
 
-// This service coordinates the query pipeline. For now that pipeline ends
-// after retrieval. Context building, Ollama generation, and citations will
-// be added here later, after we verify that retrieval itself is accurate.
+// This service coordinates retrieval, context construction, generation, and
+// citation validation for one document question.
 export async function queryDocument(
   documentId: string,
   question: string
 ): Promise<QueryResult> {
-  // embed() accepts an array because it also supports batches. A query has
-  // one question, so its vector is the first item in the returned array.
-  const embeddings = await embed([question], 'query')
+  // Keyword retrieval does not need the embedding, so it can run while the
+  // local embedding model converts the question into a vector.
+  const [embeddings, keywordResults] = await Promise.all([
+    embed([question], 'query'),
+    Chunks.searchByKeyword(documentId, question, RETRIEVAL_CANDIDATE_LIMIT),
+  ])
   const queryEmbedding = embeddings[0]
 
   if (!queryEmbedding) {
     throw new Error('Failed to create query embedding')
   }
 
-  // Postgres compares this question vector with the stored chunk vectors
-  // and returns only the five closest chunks for the selected document.
-  const retrievedChunks = await Chunks.searchSimilar(documentId, queryEmbedding, 5)
-  const {sources, context} = buildContext(retrievedChunks)
+  const vectorResults = await Chunks.searchSimilar(
+    documentId,
+    queryEmbedding,
+    RETRIEVAL_CANDIDATE_LIMIT
+  )
+
+  // RRF combines positions rather than incompatible raw score scales. Keep a
+  // broad candidate set for recall, then give only the fused top five to the
+  // context builder and Ollama.
+  const fusedResults = fuseWithRRF(vectorResults, keywordResults)
+  const contextChunks = fusedResults.slice(0, CONTEXT_SOURCE_LIMIT)
+  const { sources, context } = buildContext(contextChunks)
 
   if (sources.length === 0) {
     return {

@@ -115,3 +115,19 @@ The first implementation used websearch_to_tsquery. Its controlled exact-term te
 Added `retrieval.integration.test.ts`. It verifies a matching keyword chunk is found, chunks from another document are excluded, the score is positive, blank questions return no rows, and stop-word-only questions return no rows. TypeScript passed and the targeted real-Postgres suite passed 3/3.
 
 Ran the paper baseline question against existing generated search vectors. Keyword search ranked the correct framework chunk 5 on page 3 first with score 1.2 and the even more explicit chunk 6 on page 3 second with score 1.1. Vector-only search had placed chunk 5 fourth. This is exactly the complementary signal hybrid retrieval needs, but no fusion is wired yet.
+
+---
+
+## Reciprocal Rank Fusion wired into queryDocument
+
+Added `lib/rrf.ts` with fuseWithRRF(vectorResults, keywordResults). RRF ignores incompatible raw cosine and keyword score scales. For each list position r it adds `1 / (60 + r)` to the chunk. A chunk found by both searches gets both contributions. A Map keyed by chunk id deduplicates overlaps while retaining vector position, keyword position, raw scores, and final rrfScore. Deterministic position and chunk-index tie breakers keep repeated output stable.
+
+Added FusedChunk as the honest post-fusion representation. Updated buildContext to accept vector-only or fused chunks and allow null similarity for keyword-only candidates. Context still does not expose retrieval scores to Ollama; scores only control candidate order.
+
+Updated queryDocument to start keyword search while the question embedding is generated, retrieve the top 20 candidates from each strategy, fuse them, and pass only the fused top 5 to context construction. Broad candidate retrieval targets recall; the final five limit keeps Ollama context focused.
+
+Added `rrf.test.ts`. Tests prove that a chunk found by both lists receives both contributions and is deduplicated, chunks found by only one strategy remain eligible, the exact rank formula is correct, and input arrays are not mutated. TypeScript passed, focused RRF/context/prompt/citation tests passed 10/10, and keyword database tests passed 3/3.
+
+Directly inspected the real paper's fused ranking for the baseline question. The correct chunk 5 moved from vector rank 4 and keyword rank 1 to fused rank 2. Chunk 4 remained fused rank 1 because it was vector rank 1 plus keyword rank 4, producing the same RRF score as chunk 5; the deterministic tie breaker kept chunk 4 first. The more explicit chunk 6 was fused rank 4. Hybrid retrieval therefore improved the known correct source from rank 4 to rank 2, but did not make it rank 1. This is a real measured improvement, not a perfect result, and reranking is still needed for direct-answer precision.
+
+The live generated answer was factually correct but omitted a citation marker on this run, so citation validation returned no sources. That is a separate model compliance issue: the fused top five contained the correct page 3 chunks, but the model did not emit a label to map. Do not confuse missing model citation syntax with retrieval failure.
