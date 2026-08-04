@@ -99,3 +99,19 @@ Added `lib/citations.ts` with validateCitations(rawAnswer, availableSources). Th
 Connected validation immediately after chat() in queryDocument. The API now returns the normalized answer and cited sources rather than all five retrieved candidates. This validates that a label exists in the supplied context, but does not yet prove that the source content semantically supports the claim.
 
 Added citation tests for valid repeated labels, invented labels, the real Ollama source-id syntax, and answers with no citations. TypeScript compilation passed and the focused citation/context/prompt suite passed 7/7. Repeated the real HTTP question once more: the API returned `According to [S4]...`, returned only source S4, and mapped it to the correct page 3. The normalization and existence-validation path now works end to end.
+
+---
+
+## Postgres keyword retrieval
+
+Added and applied migration `005_chunk_keyword_search.sql`. It adds a stored generated `search_vector` tsvector column based on each chunk's English-normalized content plus a GIN index. Existing chunks were populated automatically by Postgres, and future inserts do not need to provide this field because it is generated from content.
+
+Added KeywordRetrievedChunk separately from the vector RetrievedChunk type. Keyword results carry `keyword_score` from ts_rank_cd, not cosine similarity. Keeping separate names matters because those score scales mean different things and must not be added directly.
+
+Added Chunks.searchByKeyword(documentId, question, limit). It scopes matches to one document, limits results from 1 to 50, returns no candidates for blank input, and ranks matching chunks by Postgres full-text score. The helper returns only database candidates and is not connected to queryDocument or RRF yet.
+
+The first implementation used websearch_to_tsquery. Its controlled exact-term test passed, but the real natural question returned zero rows because meaningful terms were combined too strictly: no single chunk contained every normalized word from the question. Fixed this by letting Postgres normalize the question into safe lexemes and joining those lexemes with OR before matching. This favors candidate recall; RRF and reranking will narrow the broad results later. Questions containing only English stop words are handled without creating invalid tsquery syntax.
+
+Added `retrieval.integration.test.ts`. It verifies a matching keyword chunk is found, chunks from another document are excluded, the score is positive, blank questions return no rows, and stop-word-only questions return no rows. TypeScript passed and the targeted real-Postgres suite passed 3/3.
+
+Ran the paper baseline question against existing generated search vectors. Keyword search ranked the correct framework chunk 5 on page 3 first with score 1.2 and the even more explicit chunk 6 on page 3 second with score 1.1. Vector-only search had placed chunk 5 fourth. This is exactly the complementary signal hybrid retrieval needs, but no fusion is wired yet.

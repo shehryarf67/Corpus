@@ -166,6 +166,21 @@ export type RetrievedChunk = {
   similarity: number
 }
 
+// Keyword retrieval returns the same useful chunk fields as vector search,
+// but its score comes from Postgres full-text search rather than cosine
+// similarity. Keep the score name honest because these scales are not
+// directly comparable; RRF will combine their ranking positions later.
+export type KeywordRetrievedChunk = {
+  id: string
+  document_id: string
+  chunk_index: number
+  content: string
+  page_number: number | null
+  char_start: number
+  char_end: number
+  keyword_score: number
+}
+
 const CHUNK_COLUMNS_PER_ROW = 7
 
 export const Chunks = {
@@ -282,6 +297,57 @@ export const Chunks = {
 
     // Postgres has already compared and ranked the vectors. JavaScript only
     // receives the best matching rows; it never downloads every embedding.
+    return rows
+  },
+
+  async searchByKeyword(
+    documentId: string,
+    question: string,
+    limit = 20
+  ): Promise<KeywordRetrievedChunk[]> {
+    // An empty text query has no useful keywords and should produce no
+    // candidates instead of making an unnecessary database request.
+    const trimmedQuestion = question.trim()
+    if (!trimmedQuestion) return []
+
+    const resultLimit = Math.min(Math.max(Math.trunc(limit), 1), 50)
+
+    const { rows } = await pool.query<KeywordRetrievedChunk>(
+      `WITH terms AS (
+         SELECT tsvector_to_array(to_tsvector('english', $2)) AS values
+       ),
+       query AS (
+         SELECT CASE
+           WHEN cardinality(terms.values) = 0 THEN NULL
+           ELSE to_tsquery('english', array_to_string(terms.values, ' | '))
+         END AS value
+         FROM terms
+       )
+       SELECT
+         chunks.id,
+         chunks.document_id,
+         chunks.chunk_index,
+         chunks.content,
+         chunks.page_number,
+         chunks.char_start,
+         chunks.char_end,
+         ts_rank_cd(chunks.search_vector, query.value) AS keyword_score
+       FROM chunks
+       CROSS JOIN query
+       WHERE chunks.document_id = $1
+         AND query.value IS NOT NULL
+         AND chunks.search_vector @@ query.value
+       ORDER BY keyword_score DESC, chunks.chunk_index ASC
+       LIMIT $3`,
+      // Postgres first normalizes/stems the raw question into safe lexemes,
+      // then joins those terms with OR. Requiring every natural-question term
+      // caused valid chunks to disappear when one word was absent. Values
+      // remain query parameters, so user text never becomes SQL syntax.
+      [documentId, trimmedQuestion, resultLimit]
+    )
+
+    // Unlike vector search, full-text search returns only chunks that contain
+    // matching normalized terms. No match legitimately means an empty array.
     return rows
   },
 }
