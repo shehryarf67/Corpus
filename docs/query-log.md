@@ -131,3 +131,23 @@ Added `rrf.test.ts`. Tests prove that a chunk found by both lists receives both 
 Directly inspected the real paper's fused ranking for the baseline question. The correct chunk 5 moved from vector rank 4 and keyword rank 1 to fused rank 2. Chunk 4 remained fused rank 1 because it was vector rank 1 plus keyword rank 4, producing the same RRF score as chunk 5; the deterministic tie breaker kept chunk 4 first. The more explicit chunk 6 was fused rank 4. Hybrid retrieval therefore improved the known correct source from rank 4 to rank 2, but did not make it rank 1. This is a real measured improvement, not a perfect result, and reranking is still needed for direct-answer precision.
 
 The live generated answer was factually correct but omitted a citation marker on this run, so citation validation returned no sources. That is a separate model compliance issue: the fused top five contained the correct page 3 chunks, but the model did not emit a label to map. Do not confuse missing model citation syntax with retrieval failure.
+
+---
+
+## Multi-question hybrid retrieval evaluation on test_pdf.pdf
+
+Confirmed that `docs/test_pdf.pdf` and the PDF fixture used by the complete ingestion test have the exact same SHA-256 hash. The already-ingested 22-chunk document is therefore a valid database representation of the user's test PDF, not merely a similar paper. Rendered and visually reviewed all seven pages to establish ground truth, then mapped verified page facts to actual stored chunk indexes.
+
+Added `eval/retrieval-dataset.ts` with eight questions covering authorship, model-compression directions, framework networks, subgroup bit choices, non-differentiable quantization backpropagation, evaluation tasks, group-number performance, and knowledge-distillation conclusions. Each case records accepted chunk indexes and the visually verified PDF page. Adjacent chunks are both accepted when either contains valid evidence.
+
+Added `eval/retrieval.ts` and `npm run eval:retrieval`. The harness embeds all questions as one batch, runs vector top 20 and keyword top 20, fuses them with the real RRF helper, and records the first accepted rank plus top-five chunk indexes for every strategy. It calculates recall@5 and MRR without calling Ollama, keeping retrieval quality separate from generation behavior. EVAL_DOCUMENT_ID can select another ingested copy; otherwise the script finds the latest ingested test.pdf/test_pdf.pdf.
+
+Measured results across eight questions:
+
+- Vector: recall@5 0.750, MRR 0.549.
+- Keyword: recall@5 1.000, MRR 0.667.
+- Hybrid RRF: recall@5 1.000, MRR 0.635.
+
+Hybrid improved over vector on both metrics and never ranked the accepted evidence lower than vector on this dataset. It recovered both vector misses into the top five: the authorship source moved from rank 6 to 4, and the two-network source moved from rank 7 to 3. The quantization backpropagation source moved from rank 4 to 2. Other already-strong questions stayed at or near their vector rank.
+
+Important honest result: keyword-only MRR was 0.667, slightly better than hybrid's 0.635. These questions are grounded closely in one technical paper's wording, which favors full-text search. Hybrid still has the safer recall profile and should handle paraphrases better, but this small dataset does not prove that RRF always beats each individual strategy. This is now the pre-reranker baseline. Reranking is justified because hybrid consistently finds the evidence in the top five but often does not put the most direct evidence first.
