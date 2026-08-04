@@ -4,6 +4,7 @@ import { cors } from 'hono/cors'
 import { pool } from './lib/db.js'
 import { documentsRoute } from './routes/documents.js'
 import { jobsRoute } from './routes/jobs.js'
+import { queryRoute } from './routes/query.js'
 
 const app = new Hono()
 app.use('*', cors({ origin: 'http://localhost:3000' }))
@@ -14,6 +15,7 @@ app.get('/health/db', async (c) => {
 })
 app.route('/documents', documentsRoute)
 app.route('/jobs', jobsRoute)
+app.route('/query', queryRoute)
 
 serve({ fetch: app.fetch, port: 3001 })
 console.log('server on :3001')

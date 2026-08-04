@@ -1,12 +1,11 @@
 import { Chunks, type ChunkRow, type NewChunk } from '../db.js'
+import { formatEmbeddingForPgvector } from '../vector.js'
 import type { EmbeddedChunk } from './embed.js'
 
-// pgvector accepts a vector through node-postgres as bracketed text, such
-// as "[0.1,0.2,0.3]". The embedding model gives us number[] instead, so
-// this is the runtime conversion that the NewChunk type alone cannot do.
-export function formatEmbeddingForPgvector(embedding: number[]): string {
-  return `[${embedding.join(',')}]`
-}
+// Keep the existing export available to callers while the reusable helper
+// itself now lives outside the PDF pipeline. Query retrieval needs the same
+// number[] -> pgvector conversion as ingestion.
+export { formatEmbeddingForPgvector } from '../vector.js'
 
 // Convert the PDF pipeline's camelCase EmbeddedChunk objects into the
 // database-ready NewChunk shape expected by Chunks.insertMany.

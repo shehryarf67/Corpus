@@ -1,4 +1,5 @@
 import { Pool } from 'pg'
+import { formatEmbeddingForPgvector } from './vector.js'
 
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL })
 
@@ -150,6 +151,21 @@ export type NewChunk = {
   embedding: string | null
 }
 
+// A RetrievedChunk is not a new table or a separately stored object. It is
+// the useful part of a chunks row returned after Postgres compares that
+// chunk's embedding with the question embedding. `similarity` is calculated
+// by the SELECT query for this request and is not stored in the chunks table.
+export type RetrievedChunk = {
+  id: string
+  document_id: string
+  chunk_index: number
+  content: string
+  page_number: number | null
+  char_start: number
+  char_end: number
+  similarity: number
+}
+
 const CHUNK_COLUMNS_PER_ROW = 7
 
 export const Chunks = {
@@ -226,5 +242,46 @@ export const Chunks = {
   async getByDocumentIdAndIndex(documentId: string, chunkIndex: number) {
     const { rows } = await pool.query<ChunkRow>('SELECT * FROM chunks WHERE document_id = $1 AND chunk_index = $2', [documentId, chunkIndex])
     return rows[0] ?? null
-  }
+  },
+
+  async searchSimilar(
+    documentId: string,
+    queryEmbedding: number[],
+    limit = 5
+  ): Promise<RetrievedChunk[]> {
+    // MiniLM produces 384-dimensional embeddings. Checking here gives us a
+    // clear application error instead of a less obvious pgvector SQL error.
+    if (queryEmbedding.length !== 384 || !queryEmbedding.every(Number.isFinite)) {
+      throw new Error('Query embedding must contain 384 finite numbers')
+    }
+
+    // Keep callers from requesting zero, a negative number, or an extremely
+    // large result set. The query pipeline normally asks for five results.
+    const resultLimit = Math.min(Math.max(Math.trunc(limit), 1), 50)
+    const formattedEmbedding = formatEmbeddingForPgvector(queryEmbedding)
+
+    const { rows } = await pool.query<RetrievedChunk>(
+      `SELECT
+         id,
+         document_id,
+         chunk_index,
+         content,
+         page_number,
+         char_start,
+         char_end,
+         1 - (embedding <=> $2::vector) AS similarity
+       FROM chunks
+       WHERE document_id = $1
+         AND embedding IS NOT NULL
+       ORDER BY embedding <=> $2::vector
+       LIMIT $3`,
+      // $1 scopes the search to one document. $2 is the question vector in
+      // pgvector text form. $3 controls how many top matches come back.
+      [documentId, formattedEmbedding, resultLimit]
+    )
+
+    // Postgres has already compared and ranked the vectors. JavaScript only
+    // receives the best matching rows; it never downloads every embedding.
+    return rows
+  },
 }

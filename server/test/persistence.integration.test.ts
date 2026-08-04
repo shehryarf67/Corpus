@@ -97,3 +97,37 @@ test('a duplicate chunk index rejects the whole bulk insert', async () => {
     }
   }
 })
+
+test('searchSimilar returns chunks ordered by cosine similarity', async () => {
+  let documentId: string | undefined
+
+  try {
+    const document = await Documents.create(
+      'Vector retrieval integration test',
+      'retrieval-test.pdf',
+      'application/pdf',
+      { test: true }
+    )
+    assert.ok(document)
+    documentId = document.id
+
+    const firstAxis = Array.from({ length: 384 }, (_, i) => (i === 0 ? 1 : 0))
+    const secondAxis = Array.from({ length: 384 }, (_, i) => (i === 1 ? 1 : 0))
+
+    await persistEmbeddedChunks(documentId, [
+      makeEmbeddedChunk(0, { content: 'Closest matching chunk', embedding: firstAxis }),
+      makeEmbeddedChunk(1, { content: 'Less similar chunk', embedding: secondAxis }),
+    ])
+
+    const results = await Chunks.searchSimilar(documentId, firstAxis, 2)
+
+    assert.equal(results.length, 2)
+    assert.equal(results[0]?.content, 'Closest matching chunk')
+    assert.equal(results[0]?.similarity, 1)
+    assert.ok((results[0]?.similarity ?? 0) > (results[1]?.similarity ?? 0))
+  } finally {
+    if (documentId) {
+      await pool.query('DELETE FROM documents WHERE id = $1', [documentId])
+    }
+  }
+})
