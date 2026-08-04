@@ -89,3 +89,13 @@ Replaced context headers like `[S4 | Page 3]` with explicit `<source id="S4" pag
 Set Ollama temperature to 0 in generation.ts. Grounded document answering benefits from consistency rather than creative variation, so this reduces random wording and source-label changes between identical requests. It does not guarantee factual or citation correctness by itself.
 
 TypeScript compilation and the focused context/prompt suite passed 4/4. Repeated the exact same real question. The answer again correctly identified the inner network and super network, and source attribution improved from the wrong S3/page 7 to the correct S4/page 3. However, Ollama wrote `source id="S4", page=3` instead of the requested `[S4]`. The important evidence selection improved, but exact citation output still cannot be trusted without normalization and validation in server code.
+
+---
+
+## Citation syntax normalization and label validation
+
+Added `lib/citations.ts` with validateCitations(rawAnswer, availableSources). The available ContextSource labels form an allow-list for this one request. The helper first normalizes the model variants we have actually observed, including `source id="S4", page=3` and the old `[S4 | Page 3]`, into canonical `[S4]` markers. It then extracts every canonical marker, keeps valid labels once in first-citation order, removes labels that were never supplied, and returns only the source objects actually cited by the answer. Unknown labels are also returned internally as invalidLabels and queryDocument logs them.
+
+Connected validation immediately after chat() in queryDocument. The API now returns the normalized answer and cited sources rather than all five retrieved candidates. This validates that a label exists in the supplied context, but does not yet prove that the source content semantically supports the claim.
+
+Added citation tests for valid repeated labels, invented labels, the real Ollama source-id syntax, and answers with no citations. TypeScript compilation passed and the focused citation/context/prompt suite passed 7/7. Repeated the real HTTP question once more: the API returned `According to [S4]...`, returned only source S4, and mapped it to the correct page 3. The normalization and existence-validation path now works end to end.

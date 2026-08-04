@@ -3,6 +3,7 @@ import { embed } from '../lib/embeddings.js'
 import { buildContext, type ContextSource } from '../lib/context.js'
 import { chat } from '../lib/generation.js'
 import { buildAnswerMessages } from '../lib/prompt.js'
+import { validateCitations } from '../lib/citations.js'
 
 export type QueryResult = {
   answer: string
@@ -40,7 +41,17 @@ export async function queryDocument(
   // The prompt builder combines grounding instructions, labelled context,
   // and the user's question into the messages expected by Ollama.
   const messages = buildAnswerMessages(question, context)
-  const answer = await chat(messages)
+  const rawAnswer = await chat(messages)
+  const validated = validateCitations(rawAnswer, sources)
 
-  return { answer, sources }
+  if (validated.invalidLabels.length > 0) {
+    console.warn(
+      `Ollama returned unknown citation labels: ${validated.invalidLabels.join(', ')}`
+    )
+  }
+
+  return {
+    answer: validated.answer,
+    sources: validated.sources,
+  }
 }
