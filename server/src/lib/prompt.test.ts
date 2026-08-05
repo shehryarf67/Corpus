@@ -42,3 +42,18 @@ test('buildAnswerMessages preserves an empty context for missing-source handling
   assert.match(userMessage, /DOCUMENT CONTEXT:\s+QUESTION:/)
   assert.ok(userMessage.includes('What is the answer?'))
 })
+
+test('buildAnswerMessages places conversation history before the current question', () => {
+  const messages = buildAnswerMessages('What tasks was it tested on?', 'context', [
+    { role: 'user', content: 'What is AQ-BERT?' },
+    { role: 'assistant', content: 'AQ-BERT is a quantization method.' },
+  ])
+
+  assert.deepEqual(
+    messages.map((message) => message.role),
+    ['system', 'user', 'assistant', 'user']
+  )
+  assert.equal(messages[1]?.content, 'What is AQ-BERT?')
+  assert.equal(messages[2]?.content, 'AQ-BERT is a quantization method.')
+  assert.match(messages[3]?.content ?? '', /What tasks was it tested on\?/)
+})

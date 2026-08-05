@@ -165,3 +165,33 @@ Separated `attachRerankerScores()` from model execution. This lets the fast unit
 TypeScript passed, all 36 fast tests passed, and the real model smoke test passed 1/1. The first model run initially failed because the sandbox blocked its Hugging Face download. After network permission was granted, the model downloaded, cached locally, and passed in about nine seconds.
 
 Extended `eval/retrieval.ts` with reranked ranks, top-five results, recall@5, and MRR so we can compare vector, keyword, hybrid RRF, and reranked retrieval on the same eight test-PDF questions. That database evaluation could not run during this step because Postgres on localhost:5432 was stopped and the Docker engine was not running. The pre-reranker baseline remains recorded above; reranked PDF metrics still need one run after Docker/Postgres is available.
+
+The reranked PDF evaluation was later run successfully. Reranked retrieval kept recall@5 at 1.000 and improved MRR from hybrid RRF's 0.635 to 0.813. This means every accepted source remained in the top five while the correct evidence generally moved closer to rank one.
+
+---
+
+## Conversation storage
+
+Added migration `006_conversations.sql`. A conversation represents one chat about one document. A message belongs to a conversation and stores a role of either `user` or `assistant`, its text content, and its creation time. They are separate tables because one conversation can contain many messages.
+
+Added `ConversationRow`, `MessageRow`, and `MessageRole` types in `db.ts`. Added simple helpers to create and retrieve conversations, save messages, and load a conversation's messages from oldest to newest. Empty messages are rejected before a database query is made.
+
+Both foreign keys use cascade deletion. Deleting a conversation removes its messages, and deleting a document removes its conversations and therefore their messages. Applied the migration successfully. TypeScript passed and the focused Postgres conversation tests passed 3/3, covering ordered history, empty-message rejection, and cascade deletion.
+
+### Conversation-aware query endpoint
+
+Kept HTTP work in `routes/query.ts`: reading JSON, validating `documentId`, `question`, and optional `conversationId`, selecting HTTP error codes, and returning JSON. Moved the actual conversation workflow into `services/query.ts` because creating or loading conversations, storing messages, and running RAG are application logic rather than HTTP logic.
+
+Added `queryConversation()` around the existing `queryDocument()`. A request without a conversation ID creates a new conversation. A request with an ID resumes it. The service rejects a conversation tied to another document, loads previous history before the new question is stored, saves the user message, runs the existing query pipeline, saves the assistant answer, and returns `conversationId` with the answer and sources. The loaded history is intentionally not used yet; the next query-rewriting step will consume it.
+
+Added `QueryConversationError` so the service can report expected 400 and 404 conversation errors while the route remains responsible for turning them into HTTP responses. TypeScript passed and the focused conversation database tests still passed 3/3.
+
+### History-aware rewriting and generation
+
+Added `Messages.getRecentByConversationId()`. The database still stores every message, but only the latest 10 messages are loaded for model input by default. The SQL selects the newest messages first and then returns that small selection in natural oldest-to-newest order.
+
+Added `lib/rewrite.ts`. `rewriteQuestion(question, history)` asks Ollama to resolve follow-up references and return one standalone search question without answering it. A first question with no history is returned unchanged, avoiding an unnecessary model call.
+
+Updated the query flow to keep two question values. `originalQuestion` is exactly what the user asked. `retrievalQuestion` is the standalone rewrite. Embedding, keyword search, and reranking use the rewrite. Final answer generation uses the original question, recent conversation history, and retrieved document context. The stored user message remains the original wording, not the internal rewrite.
+
+Updated `buildAnswerMessages()` to place previous user and assistant messages before the current grounded question. Added tests for rewrite prompt contents, the no-history shortcut, generation message order, and recent-history selection. TypeScript passed, all fast tests passed 39/39, and focused conversation Postgres tests passed 4/4. A full two-request HTTP conversation test remains the next separate verification step.

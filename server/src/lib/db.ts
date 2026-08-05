@@ -77,6 +77,26 @@ export const Messages = {
     )
     return rows
   },
+
+  async getRecentByConversationId(conversationId: string, limit = 10) {
+    const resultLimit = Math.min(Math.max(Math.trunc(limit), 1), 50)
+
+    // The inner query selects the newest messages. The outer query flips that
+    // small result back into natural oldest-to-newest conversation order.
+    const { rows } = await pool.query<MessageRow>(
+      `SELECT *
+       FROM (
+         SELECT *
+         FROM messages
+         WHERE conversation_id = $1
+         ORDER BY created_at DESC, id DESC
+         LIMIT $2
+       ) AS recent_messages
+       ORDER BY created_at ASC, id ASC`,
+      [conversationId, resultLimit]
+    )
+    return rows
+  },
 }
 
 // Matches the real `documents` table columns exactly (snake_case, same as

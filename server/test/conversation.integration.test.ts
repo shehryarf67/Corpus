@@ -53,6 +53,37 @@ test('Messages.create rejects an empty message before querying Postgres', async 
   })
 })
 
+test('recent history keeps the newest messages but returns them oldest first', async () => {
+  let documentId: string | undefined
+
+  try {
+    const document = await Documents.create(
+      'Recent history test',
+      'recent-history-test.pdf',
+      'application/pdf'
+    )
+    assert.ok(document)
+    documentId = document.id
+
+    const conversation = await Conversations.create(document.id)
+    assert.ok(conversation)
+
+    await Messages.create(conversation.id, 'user', 'Message one')
+    await Messages.create(conversation.id, 'assistant', 'Message two')
+    await Messages.create(conversation.id, 'user', 'Message three')
+
+    const recent = await Messages.getRecentByConversationId(conversation.id, 2)
+    assert.deepEqual(
+      recent.map((message) => message.content),
+      ['Message two', 'Message three']
+    )
+  } finally {
+    if (documentId) {
+      await pool.query('DELETE FROM documents WHERE id = $1', [documentId])
+    }
+  }
+})
+
 test('deleting a document also deletes its conversations and messages', async () => {
   const document = await Documents.create(
     'Conversation cascade test',

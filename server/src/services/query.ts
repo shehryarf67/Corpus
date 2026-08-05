@@ -6,6 +6,8 @@ import { buildAnswerMessages } from '../lib/prompt.js'
 import { validateCitations } from '../lib/citations.js'
 import { fuseWithRRF } from '../lib/rrf.js'
 import { rerankChunks } from '../lib/reranker.js'
+import { rewriteQuestion } from '../lib/rewrite.js'
+import type { MessageRow } from '../lib/db.js'
 
 const RETRIEVAL_CANDIDATE_LIMIT = 20
 const RERANK_CANDIDATE_LIMIT = 15
@@ -59,10 +61,16 @@ export async function queryConversation(
   // We will pass this history to the query rewriter in the next step. Loading
   // it before saving the new question means the new question will not appear
   // twice when we supply both `history` and `question` to that helper.
-  const history = await Messages.getByConversationId(conversation.id)
+  const history = await Messages.getRecentByConversationId(conversation.id)
 
   await Messages.create(conversation.id, 'user', question) // Save the new question to the conversation history.
-  const result = await queryDocument(documentId, question) // Generate an answer using the document's context and the question.
+  const rewrittenQuestion = await rewriteQuestion(question, history)
+  const result = await queryDocument(
+    documentId,
+    question,
+    rewrittenQuestion,
+    history
+  )
   await Messages.create(conversation.id, 'assistant', result.answer) // Save the generated answer to the conversation history.
 
   return {
@@ -75,13 +83,19 @@ export async function queryConversation(
 // citation validation for one document question.
 export async function queryDocument(
   documentId: string,
-  question: string
+  originalQuestion: string,
+  retrievalQuestion = originalQuestion,
+  history: readonly Pick<MessageRow, 'role' | 'content'>[] = []
 ): Promise<QueryResult> {
   // Keyword retrieval does not need the embedding, so it can run while the
   // local embedding model converts the question into a vector.
   const [embeddings, keywordResults] = await Promise.all([
-    embed([question], 'query'),
-    Chunks.searchByKeyword(documentId, question, RETRIEVAL_CANDIDATE_LIMIT),
+    embed([retrievalQuestion], 'query'),
+    Chunks.searchByKeyword(
+      documentId,
+      retrievalQuestion,
+      RETRIEVAL_CANDIDATE_LIMIT
+    ),
   ])
   const queryEmbedding = embeddings[0]
 
@@ -101,7 +115,10 @@ export async function queryDocument(
   // generation context, keeping the final prompt focused.
   const fusedResults = fuseWithRRF(vectorResults, keywordResults)
   const rerankCandidates = fusedResults.slice(0, RERANK_CANDIDATE_LIMIT)
-  const rerankedResults = await rerankChunks(question, rerankCandidates)
+  const rerankedResults = await rerankChunks(
+    retrievalQuestion,
+    rerankCandidates
+  )
   const contextChunks = rerankedResults.slice(0, CONTEXT_SOURCE_LIMIT)
   const { sources, context } = buildContext(contextChunks)
 
@@ -114,7 +131,7 @@ export async function queryDocument(
 
   // The prompt builder combines grounding instructions, labelled context,
   // and the user's question into the messages expected by Ollama.
-  const messages = buildAnswerMessages(question, context)
+  const messages = buildAnswerMessages(originalQuestion, context, history)
   const rawAnswer = await chat(messages)
   const validated = validateCitations(rawAnswer, sources)
 
