@@ -1,17 +1,18 @@
 import { Chunks, Conversations, Messages } from '../lib/db.js'
 import { embed } from '../lib/embeddings.js'
 import { buildContext, type ContextSource } from '../lib/context.js'
-import { chat } from '../lib/generation.js'
+import { chat, type ChatMessage } from '../lib/generation.js'
 import { buildAnswerMessages } from '../lib/prompt.js'
 import { validateCitations } from '../lib/citations.js'
 import { fuseWithRRF } from '../lib/rrf.js'
 import { rerankChunks } from '../lib/reranker.js'
 import { rewriteQuestion } from '../lib/rewrite.js'
-import type { MessageRow } from '../lib/db.js'
 
 const RETRIEVAL_CANDIDATE_LIMIT = 20
 const RERANK_CANDIDATE_LIMIT = 15
 const CONTEXT_SOURCE_LIMIT = 5
+const NO_SEARCHABLE_CONTENT_ANSWER =
+  'I could not find any searchable content in this document.'
 
 export type QueryResult = {
   answer: string
@@ -20,6 +21,15 @@ export type QueryResult = {
 
 export type ConversationQueryResult = QueryResult & {
   conversationId: string
+}
+
+// Everything answer generation needs after conversation setup, rewriting,
+// retrieval, reranking, context construction, and prompt construction finish.
+// Both normal chat() and future chatStream() can consume the same preparation.
+export type PreparedQuery = {
+  conversationId: string
+  messages: ChatMessage[]
+  sources: ContextSource[]
 }
 
 // The service uses this error when the request is valid JSON but the selected
@@ -34,13 +44,14 @@ export class QueryConversationError extends Error {
   }
 }
 
-// This service owns the complete conversation workflow. For a first message
-// it creates a conversation; later requests load that same conversation.
-export async function queryConversation(
+// Prepare everything needed for final answer generation, but do not generate
+// or save the assistant answer here. Keeping that boundary lets chat() and
+// chatStream() share one retrieval and prompt-building pipeline.
+export async function prepareQuery(
   documentId: string,
   question: string,
   conversationId?: string
-): Promise<ConversationQueryResult> {
+): Promise<PreparedQuery> {
   const conversation = conversationId
     ? await Conversations.getById(conversationId)
     : await Conversations.create(documentId)
@@ -58,42 +69,20 @@ export async function queryConversation(
     )
   }
 
-  // We will pass this history to the query rewriter in the next step. Loading
-  // it before saving the new question means the new question will not appear
-  // twice when we supply both `history` and `question` to that helper.
+  // Loading history before saving the new question means the question does not
+  // appear twice when both `history` and `question` are sent to the models.
   const history = await Messages.getRecentByConversationId(conversation.id)
 
   await Messages.create(conversation.id, 'user', question) // Save the new question to the conversation history.
   const rewrittenQuestion = await rewriteQuestion(question, history)
-  const result = await queryDocument(
-    documentId,
-    question,
-    rewrittenQuestion,
-    history
-  )
-  await Messages.create(conversation.id, 'assistant', result.answer) // Save the generated answer to the conversation history.
 
-  return {
-    conversationId: conversation.id,
-    ...result,
-  }
-}
-
-// This service coordinates retrieval, context construction, generation, and
-// citation validation for one document question.
-export async function queryDocument(
-  documentId: string,
-  originalQuestion: string,
-  retrievalQuestion = originalQuestion,
-  history: readonly Pick<MessageRow, 'role' | 'content'>[] = []
-): Promise<QueryResult> {
   // Keyword retrieval does not need the embedding, so it can run while the
-  // local embedding model converts the question into a vector.
+  // local embedding model converts the rewritten search question into a vector.
   const [embeddings, keywordResults] = await Promise.all([
-    embed([retrievalQuestion], 'query'),
+    embed([rewrittenQuestion], 'query'),
     Chunks.searchByKeyword(
       documentId,
-      retrievalQuestion,
+      rewrittenQuestion,
       RETRIEVAL_CANDIDATE_LIMIT
     ),
   ])
@@ -116,24 +105,48 @@ export async function queryDocument(
   const fusedResults = fuseWithRRF(vectorResults, keywordResults)
   const rerankCandidates = fusedResults.slice(0, RERANK_CANDIDATE_LIMIT)
   const rerankedResults = await rerankChunks(
-    retrievalQuestion,
+    rewrittenQuestion,
     rerankCandidates
   )
   const contextChunks = rerankedResults.slice(0, CONTEXT_SOURCE_LIMIT)
   const { sources, context } = buildContext(contextChunks)
 
-  if (sources.length === 0) {
+  // Retrieval used the standalone rewrite, but the answer prompt uses exactly
+  // what the user asked plus prior history and the retrieved document context.
+  const messages = buildAnswerMessages(question, context, history)
+
+  return {
+    conversationId: conversation.id,
+    messages,
+    sources,
+  }
+}
+
+// The current non-streaming query path now has one small job after preparation:
+// generate the answer, validate it, save it, and return it to the route.
+export async function queryConversation(
+  documentId: string,
+  question: string,
+  conversationId?: string
+): Promise<ConversationQueryResult> {
+  const prepared = await prepareQuery(documentId, question, conversationId)
+
+  if (prepared.sources.length === 0) {
+    await Messages.create(
+      prepared.conversationId,
+      'assistant',
+      NO_SEARCHABLE_CONTENT_ANSWER
+    )
+
     return {
-      answer: 'I could not find any searchable content in this document.',
+      conversationId: prepared.conversationId,
+      answer: NO_SEARCHABLE_CONTENT_ANSWER,
       sources: [],
     }
   }
 
-  // The prompt builder combines grounding instructions, labelled context,
-  // and the user's question into the messages expected by Ollama.
-  const messages = buildAnswerMessages(originalQuestion, context, history)
-  const rawAnswer = await chat(messages)
-  const validated = validateCitations(rawAnswer, sources)
+  const rawAnswer = await chat(prepared.messages)
+  const validated = validateCitations(rawAnswer, prepared.sources)
 
   if (validated.invalidLabels.length > 0) {
     console.warn(
@@ -141,7 +154,14 @@ export async function queryDocument(
     )
   }
 
+  await Messages.create(
+    prepared.conversationId,
+    'assistant',
+    validated.answer
+  )
+
   return {
+    conversationId: prepared.conversationId,
     answer: validated.answer,
     sources: validated.sources,
   }
