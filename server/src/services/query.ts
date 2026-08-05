@@ -1,4 +1,4 @@
-import { Chunks } from '../lib/db.js'
+import { Chunks, Conversations, Messages } from '../lib/db.js'
 import { embed } from '../lib/embeddings.js'
 import { buildContext, type ContextSource } from '../lib/context.js'
 import { chat } from '../lib/generation.js'
@@ -14,6 +14,61 @@ const CONTEXT_SOURCE_LIMIT = 5
 export type QueryResult = {
   answer: string
   sources: ContextSource[]
+}
+
+export type ConversationQueryResult = QueryResult & {
+  conversationId: string
+}
+
+// The service uses this error when the request is valid JSON but the selected
+// conversation cannot be used. The route turns its statusCode into an HTTP
+// response without putting database workflow inside the route itself.
+export class QueryConversationError extends Error {
+  statusCode: 400 | 404
+
+  constructor(message: string, statusCode: 400 | 404) {
+    super(message)
+    this.statusCode = statusCode
+  }
+}
+
+// This service owns the complete conversation workflow. For a first message
+// it creates a conversation; later requests load that same conversation.
+export async function queryConversation(
+  documentId: string,
+  question: string,
+  conversationId?: string
+): Promise<ConversationQueryResult> {
+  const conversation = conversationId
+    ? await Conversations.getById(conversationId)
+    : await Conversations.create(documentId)
+
+  if (!conversation) {
+    throw new QueryConversationError('Conversation not found', 404)
+  }
+
+  // A conversation is tied to one document. Mixing IDs would make history
+  // from one document influence answers about a different document.
+  if (conversation.document_id !== documentId) {
+    throw new QueryConversationError(
+      'Conversation does not belong to this document',
+      400
+    )
+  }
+
+  // We will pass this history to the query rewriter in the next step. Loading
+  // it before saving the new question means the new question will not appear
+  // twice when we supply both `history` and `question` to that helper.
+  const history = await Messages.getByConversationId(conversation.id)
+
+  await Messages.create(conversation.id, 'user', question) // Save the new question to the conversation history.
+  const result = await queryDocument(documentId, question) // Generate an answer using the document's context and the question.
+  await Messages.create(conversation.id, 'assistant', result.answer) // Save the generated answer to the conversation history.
+
+  return {
+    conversationId: conversation.id,
+    ...result,
+  }
 }
 
 // This service coordinates retrieval, context construction, generation, and
