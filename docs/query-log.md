@@ -195,3 +195,11 @@ Added `lib/rewrite.ts`. `rewriteQuestion(question, history)` asks Ollama to reso
 Updated the query flow to keep two question values. `originalQuestion` is exactly what the user asked. `retrievalQuestion` is the standalone rewrite. Embedding, keyword search, and reranking use the rewrite. Final answer generation uses the original question, recent conversation history, and retrieved document context. The stored user message remains the original wording, not the internal rewrite.
 
 Updated `buildAnswerMessages()` to place previous user and assistant messages before the current grounded question. Added tests for rewrite prompt contents, the no-history shortcut, generation message order, and recent-history selection. TypeScript passed, all fast tests passed 39/39, and focused conversation Postgres tests passed 4/4. A full two-request HTTP conversation test remains the next separate verification step.
+
+### Multi-turn end-to-end verification
+
+Ran the full automated suite after wiring conversations: 39/39 fast tests passed, the real reranker model test passed 1/1, and all Postgres integration tests passed 12/12.
+
+Then ran a real two-request HTTP conversation against the ingested `test_pdf.pdf`. The first request asked `What is AQ-BERT?` and returned conversation ID `54eca87b-6c59-406b-ae65-36cd0e3fc944`. The second request reused that ID and asked `Which four NLP tasks was it evaluated on?`. It correctly answered SST-2, MNLI, CoNLL-2003, and SQuAD, exactly matching stored chunk 12 on page 5.
+
+Database inspection confirmed four messages were saved in the correct order: user, assistant, user, assistant. A direct rewrite check changed `What tasks was it tested on?` into a standalone question explicitly naming AQ-BERT. This verifies history loading and reference resolution separately from the successful retrieval result. The generated answers omitted citation labels on this run, so the validated `sources` arrays were empty; factual retrieval and multi-turn behavior passed, while Ollama citation-format compliance remains imperfect. Removed the temporary test conversation and verification scripts after the checks.
