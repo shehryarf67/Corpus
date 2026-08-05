@@ -203,3 +203,11 @@ Ran the full automated suite after wiring conversations: 39/39 fast tests passed
 Then ran a real two-request HTTP conversation against the ingested `test_pdf.pdf`. The first request asked `What is AQ-BERT?` and returned conversation ID `54eca87b-6c59-406b-ae65-36cd0e3fc944`. The second request reused that ID and asked `Which four NLP tasks was it evaluated on?`. It correctly answered SST-2, MNLI, CoNLL-2003, and SQuAD, exactly matching stored chunk 12 on page 5.
 
 Database inspection confirmed four messages were saved in the correct order: user, assistant, user, assistant. A direct rewrite check changed `What tasks was it tested on?` into a standalone question explicitly naming AQ-BERT. This verifies history loading and reference resolution separately from the successful retrieval result. The generated answers omitted citation labels on this run, so the validated `sources` arrays were empty; factual retrieval and multi-turn behavior passed, while Ollama citation-format compliance remains imperfect. Removed the temporary test conversation and verification scripts after the checks.
+
+---
+
+## Ollama answer streaming parser
+
+Added `chatStream()` beside the existing non-streaming `chat()` helper. It requests `stream: true`, reads Ollama's NDJSON response as bytes, decodes those bytes into text, keeps incomplete JSON in a buffer, parses only newline-completed objects, and yields each non-empty `message.content` piece through an async generator. It also handles a final object without a trailing newline, streamed Ollama errors, HTTP errors, missing response bodies, and reader-lock cleanup.
+
+Added four controlled parser tests covering multiple NDJSON lines, JSON split across network reads, a final object without a newline, and a streamed error. All 4/4 passed. Added a separate real-model smoke test and `npm run test:stream`; it consumed an actual streamed response from local Ollama and passed 1/1. The real check took about 18 seconds. No SSE route or `prepareQuery` refactor was added at this checkpoint.
