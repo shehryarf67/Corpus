@@ -7,6 +7,78 @@ export const User = {
 
 }
 
+// One conversation is one chat about one document. The actual chat text is
+// stored separately in messages because one conversation has many messages.
+export type ConversationRow = {
+  id: string
+  document_id: string
+  created_at: string
+}
+
+export type MessageRole = 'user' | 'assistant'
+
+export type MessageRow = {
+  id: string
+  conversation_id: string
+  role: MessageRole
+  content: string
+  created_at: string
+}
+
+export const Conversations = {
+  async create(documentId: string) {
+    const { rows } = await pool.query<ConversationRow>(
+      'INSERT INTO conversations (document_id) VALUES ($1) RETURNING *',
+      [documentId]
+    )
+    return rows[0]
+  },
+
+  async getById(id: string) {
+    const { rows } = await pool.query<ConversationRow>(
+      'SELECT * FROM conversations WHERE id = $1',
+      [id]
+    )
+    return rows[0] ?? null
+  },
+
+  async getByDocumentId(documentId: string) {
+    const { rows } = await pool.query<ConversationRow>(
+      'SELECT * FROM conversations WHERE document_id = $1 ORDER BY created_at DESC',
+      [documentId]
+    )
+    return rows
+  },
+}
+
+export const Messages = {
+  async create(conversationId: string, role: MessageRole, content: string) {
+    const trimmedContent = content.trim()
+    if (!trimmedContent) {
+      throw new Error('Message content cannot be empty')
+    }
+
+    const { rows } = await pool.query<MessageRow>(
+      `INSERT INTO messages (conversation_id, role, content)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [conversationId, role, trimmedContent]
+    )
+    return rows[0]
+  },
+
+  async getByConversationId(conversationId: string) {
+    const { rows } = await pool.query<MessageRow>(
+      `SELECT *
+       FROM messages
+       WHERE conversation_id = $1
+       ORDER BY created_at ASC, id ASC`,
+      [conversationId]
+    )
+    return rows
+  },
+}
+
 // Matches the real `documents` table columns exactly (snake_case, same as
 // Postgres), not the app's camelCase convention — this describes what a row
 // actually looks like coming back from a query, same role Job plays for
