@@ -5,8 +5,10 @@ import { chat } from '../lib/generation.js'
 import { buildAnswerMessages } from '../lib/prompt.js'
 import { validateCitations } from '../lib/citations.js'
 import { fuseWithRRF } from '../lib/rrf.js'
+import { rerankChunks } from '../lib/reranker.js'
 
 const RETRIEVAL_CANDIDATE_LIMIT = 20
+const RERANK_CANDIDATE_LIMIT = 15
 const CONTEXT_SOURCE_LIMIT = 5
 
 export type QueryResult = {
@@ -38,11 +40,14 @@ export async function queryDocument(
     RETRIEVAL_CANDIDATE_LIMIT
   )
 
-  // RRF combines positions rather than incompatible raw score scales. Keep a
-  // broad candidate set for recall, then give only the fused top five to the
-  // context builder and Ollama.
+  // RRF gives us a broad candidate list using both retrieval signals. The
+  // cross-encoder then reads the question together with each of the best 15
+  // candidates and sorts them by direct relevance. Only its top five become
+  // generation context, keeping the final prompt focused.
   const fusedResults = fuseWithRRF(vectorResults, keywordResults)
-  const contextChunks = fusedResults.slice(0, CONTEXT_SOURCE_LIMIT)
+  const rerankCandidates = fusedResults.slice(0, RERANK_CANDIDATE_LIMIT)
+  const rerankedResults = await rerankChunks(question, rerankCandidates)
+  const contextChunks = rerankedResults.slice(0, CONTEXT_SOURCE_LIMIT)
   const { sources, context } = buildContext(contextChunks)
 
   if (sources.length === 0) {

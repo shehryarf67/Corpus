@@ -1,10 +1,12 @@
 import { Chunks, pool } from '../src/lib/db.js'
 import { embed } from '../src/lib/embeddings.js'
 import { fuseWithRRF } from '../src/lib/rrf.js'
+import { rerankChunks } from '../src/lib/reranker.js'
 import { retrievalDataset } from './retrieval-dataset.js'
 
 const CANDIDATE_LIMIT = 20
 const METRIC_K = 5
+const RERANK_CANDIDATE_LIMIT = 15
 
 type RankedChunk = {
   chunk_index: number
@@ -82,6 +84,7 @@ async function main(): Promise<void> {
     const vectorRanks: Array<number | null> = []
     const keywordRanks: Array<number | null> = []
     const hybridRanks: Array<number | null> = []
+    const rerankedRanks: Array<number | null> = []
 
     for (let index = 0; index < retrievalDataset.length; index++) {
       const evaluationCase = retrievalDataset[index]
@@ -95,6 +98,10 @@ async function main(): Promise<void> {
         Chunks.searchByKeyword(documentId, evaluationCase.question, CANDIDATE_LIMIT),
       ])
       const hybridResults = fuseWithRRF(vectorResults, keywordResults)
+      const rerankedResults = await rerankChunks(
+        evaluationCase.question,
+        hybridResults.slice(0, RERANK_CANDIDATE_LIMIT)
+      )
 
       const vector = summarizeStrategy(
         vectorResults,
@@ -108,10 +115,15 @@ async function main(): Promise<void> {
         hybridResults,
         evaluationCase.expectedChunkIndexes
       )
+      const reranked = summarizeStrategy(
+        rerankedResults,
+        evaluationCase.expectedChunkIndexes
+      )
 
       vectorRanks.push(vector.rank)
       keywordRanks.push(keyword.rank)
       hybridRanks.push(hybrid.rank)
+      rerankedRanks.push(reranked.rank)
       rows.push({
         question: evaluationCase.question,
         expectedPage: evaluationCase.expectedPage,
@@ -119,9 +131,11 @@ async function main(): Promise<void> {
         vectorRank: formatRank(vector.rank),
         keywordRank: formatRank(keyword.rank),
         hybridRank: formatRank(hybrid.rank),
+        rerankedRank: formatRank(reranked.rank),
         vectorTop5: vector.topFive.join(','),
         keywordTop5: keyword.topFive.join(','),
         hybridTop5: hybrid.topFive.join(','),
+        rerankedTop5: reranked.topFive.join(','),
       })
     }
 
@@ -132,6 +146,7 @@ async function main(): Promise<void> {
       { strategy: 'vector', ...calculateMetrics(vectorRanks) },
       { strategy: 'keyword', ...calculateMetrics(keywordRanks) },
       { strategy: 'hybrid', ...calculateMetrics(hybridRanks) },
+      { strategy: 'reranked', ...calculateMetrics(rerankedRanks) },
     ]
     console.table(
       metrics.map((metric) => ({

@@ -151,3 +151,17 @@ Measured results across eight questions:
 Hybrid improved over vector on both metrics and never ranked the accepted evidence lower than vector on this dataset. It recovered both vector misses into the top five: the authorship source moved from rank 6 to 4, and the two-network source moved from rank 7 to 3. The quantization backpropagation source moved from rank 4 to 2. Other already-strong questions stayed at or near their vector rank.
 
 Important honest result: keyword-only MRR was 0.667, slightly better than hybrid's 0.635. These questions are grounded closely in one technical paper's wording, which favors full-text search. Hybrid still has the safer recall profile and should handle paraphrases better, but this small dataset does not prove that RRF always beats each individual strategy. This is now the pre-reranker baseline. Reranking is justified because hybrid consistently finds the evidence in the top five but often does not put the most direct evidence first.
+
+---
+
+## Local cross-encoder reranking
+
+Added `lib/reranker.ts` using `Xenova/ms-marco-MiniLM-L-6-v2`. Unlike the embedding model, the reranker reads the question and one candidate chunk together. It returns one relevance score for every pair, then sorts the candidates by that score. This is slower than vector or keyword retrieval, so it only receives the best 15 RRF candidates. Its best five are sent into `buildContext()` and then Ollama.
+
+The tokenizer and model are lazy-loaded on the first non-empty request and their promises are reused afterwards. Inputs are padded and truncated to the model's 512-token limit. We use the raw sequence-classification logits directly because only their order matters for candidates belonging to the same question. RRF score and chunk index are deterministic tie-breakers.
+
+Separated `attachRerankerScores()` from model execution. This lets the fast unit suite test sorting, tie-breaking, missing-score errors, input immutability, and empty candidates without downloading or loading the model. Added a separate `npm run test:reranker` smoke test for the real model. It asks which planet is known as the Red Planet and confirms that the Mars passage ranks above the Saturn passage.
+
+TypeScript passed, all 36 fast tests passed, and the real model smoke test passed 1/1. The first model run initially failed because the sandbox blocked its Hugging Face download. After network permission was granted, the model downloaded, cached locally, and passed in about nine seconds.
+
+Extended `eval/retrieval.ts` with reranked ranks, top-five results, recall@5, and MRR so we can compare vector, keyword, hybrid RRF, and reranked retrieval on the same eight test-PDF questions. That database evaluation could not run during this step because Postgres on localhost:5432 was stopped and the Docker engine was not running. The pre-reranker baseline remains recorded above; reranked PDF metrics still need one run after Docker/Postgres is available.
