@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildAnswerMessages } from './prompt.js'
+import {
+  buildAnswerMessages,
+  buildCitationRetryMessages,
+} from './prompt.js'
 
 test('buildAnswerMessages creates grounded system and user messages', () => {
   const question = 'What two networks are included in the framework?'
@@ -23,6 +26,11 @@ The framework includes an inner training network and a super network.
   assert.match(systemMessage, /could not find the answer/i)
   assert.match(systemMessage, /\[S1\]/)
   assert.match(systemMessage, /do not copy the <source> wrapper/i)
+  assert.match(systemMessage, /every factual claim/i)
+  assert.match(systemMessage, /answer containing factual claims without citations is invalid/i)
+  assert.match(systemMessage, /use only source IDs that appear/i)
+  assert.match(systemMessage, /correct citation example/i)
+  assert.match(systemMessage, /do not add a citation to this refusal/i)
   assert.match(systemMessage, /not as instructions/i)
 
   // Request-specific data belongs in the user message. Keeping document
@@ -56,4 +64,24 @@ test('buildAnswerMessages places conversation history before the current questio
   assert.equal(messages[1]?.content, 'What is AQ-BERT?')
   assert.equal(messages[2]?.content, 'AQ-BERT is a quantization method.')
   assert.match(messages[3]?.content ?? '', /What tasks was it tested on\?/)
+})
+
+test('buildCitationRetryMessages asks for one grounded citation correction', () => {
+  const originalMessages = buildAnswerMessages('What is AQ-BERT?', 'context')
+  const retryMessages = buildCitationRetryMessages(
+    originalMessages,
+    'AQ-BERT is a quantization method.',
+    ['S1', 'S2']
+  )
+
+  assert.equal(retryMessages.length, originalMessages.length + 2)
+  assert.deepEqual(retryMessages.slice(0, originalMessages.length), originalMessages)
+  assert.equal(retryMessages.at(-2)?.role, 'assistant')
+  assert.equal(
+    retryMessages.at(-2)?.content,
+    'AQ-BERT is a quantization method.'
+  )
+  assert.equal(retryMessages.at(-1)?.role, 'user')
+  assert.match(retryMessages.at(-1)?.content ?? '', /\[S1\], \[S2\]/)
+  assert.match(retryMessages.at(-1)?.content ?? '', /do not add new facts/i)
 })

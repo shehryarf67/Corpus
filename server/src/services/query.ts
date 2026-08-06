@@ -2,7 +2,10 @@ import { Chunks, Conversations, Messages } from '../lib/db.js'
 import { embed } from '../lib/embeddings.js'
 import { buildContext, type ContextSource } from '../lib/context.js'
 import { chat, type ChatMessage } from '../lib/generation.js'
-import { buildAnswerMessages } from '../lib/prompt.js'
+import {
+  buildAnswerMessages,
+  buildCitationRetryMessages,
+} from '../lib/prompt.js'
 import { validateCitations } from '../lib/citations.js'
 import { fuseWithRRF } from '../lib/rrf.js'
 import { rerankChunks } from '../lib/reranker.js'
@@ -146,7 +149,22 @@ export async function queryConversation(
   }
 
   const rawAnswer = await chat(prepared.messages)
-  const validated = validateCitations(rawAnswer, prepared.sources)
+  let validated = validateCitations(rawAnswer, prepared.sources)
+
+  // Citations are model-written text, so the first answer can omit them or
+  // invent a label. Retry exactly once with the same grounded prompt and the
+  // first answer, asking Ollama only to correct its citation formatting.
+  if (validated.sources.length === 0 || validated.invalidLabels.length > 0) {
+    console.warn('Ollama returned missing or invalid citations; retrying once')
+
+    const retryMessages = buildCitationRetryMessages(
+      prepared.messages,
+      rawAnswer,
+      prepared.sources.map((source) => source.label)
+    )
+    const retryAnswer = await chat(retryMessages)
+    validated = validateCitations(retryAnswer, prepared.sources)
+  }
 
   if (validated.invalidLabels.length > 0) {
     console.warn(
