@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Corpus — prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+/* ────────────────────────────────────────────────────────────
+   TOKENS
+   Cool slate everywhere; the ONLY warm colour on screen is
+   provenance — highlighter ink. If it's amber, it came from
+   the document.
+   ──────────────────────────────────────────────────────────── */
+:root{
+  --void:#0A0C10;
+  --chrome:#0F1217;
+  --page:#151920;
+  --raise:#1A1F27;
+
+  --rule:rgba(228,231,236,.075);
+  --rule-strong:rgba(228,231,236,.15);
+
+  --bone:#E4E7EC;
+  --read:#C7CED8;
+  --graphite:#8C95A3;
+  --graphite-dim:#5C6573;
+
+  --marker:#E0A244;
+  --marker-soft:rgba(224,162,68,.15);
+  --marker-wash:rgba(224,162,68,.10);
+  --marker-line:rgba(224,162,68,.6);
+
+  --sans:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;
+  --serif:'Spectral',Georgia,'Times New Roman',serif;
+  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  background:var(--void);
+  color:var(--bone);
+  font-family:var(--sans);
+  font-size:14px;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input{font:inherit}
+:focus-visible{outline:2px solid var(--marker);outline-offset:2px;border-radius:2px}
+
+.eyebrow{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--graphite-dim);
+}
+
+/* ────────────────────────────────────────────────────────────
+   WORDMARK
+   ──────────────────────────────────────────────────────────── */
+.wordmark{display:flex;align-items:center;gap:9px}
+.wordmark svg{display:block}
+.wordmark span{
+  font-weight:600;letter-spacing:-.015em;font-size:14.5px;
+}
+
+/* ────────────────────────────────────────────────────────────
+   SCREEN 1 — AUTH
+   Set as the title block of a paper, not a card on a gradient.
+   ──────────────────────────────────────────────────────────── */
+#auth{
+  min-height:100dvh;display:grid;grid-template-columns:56px 1fr;
+}
+#auth.hide{display:none}
+
+.stamp{
+  border-right:1px solid var(--rule);
+  display:flex;align-items:center;justify-content:center;
+  background:var(--chrome);
+}
+.stamp p{
+  writing-mode:vertical-rl;transform:rotate(180deg);
+  margin:0;font-family:var(--mono);font-size:10.5px;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--graphite-dim);white-space:nowrap;
+}
+
+.auth-body{
+  display:flex;align-items:center;
+  padding:48px clamp(24px,7vw,110px);
+}
+.auth-col{width:100%;max-width:480px}
+
+.auth-head{margin-bottom:34px}
+.auth-title{
+  font-family:var(--serif);font-weight:600;font-size:46px;line-height:1.02;
+  letter-spacing:-.025em;margin:20px 0 0;
+}
+.auth-sub{
+  font-family:var(--serif);font-size:19px;line-height:1.5;color:var(--graphite);
+  margin:14px 0 0;max-width:38ch;
+}
+.auth-sub em{color:var(--marker);font-style:italic}
+
+.auth-abstract{
+  border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);
+  padding:18px 0;margin:30px 0 32px;
+}
+.auth-abstract p{
+  font-family:var(--serif);font-size:14.5px;line-height:1.66;
+  color:var(--read);margin:10px 0 0;
+}
+
+.field{margin-bottom:14px}
+.field label{
+  display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--graphite-dim);margin-bottom:7px;
+}
+.field input{
+  width:100%;padding:11px 13px;background:var(--chrome);
+  border:1px solid var(--rule-strong);border-radius:3px;
+  color:var(--bone);font-size:14px;transition:border-color .16s;
+}
+.field input::placeholder{color:var(--graphite-dim)}
+.field input:focus{outline:none;border-color:var(--marker-line)}
+#field-name{display:none}
+#auth.signup #field-name{display:block}
+
+.btn-primary{
+  width:100%;margin-top:8px;padding:12px;border-radius:3px;
+  background:var(--marker);color:#171004;font-weight:600;letter-spacing:.005em;
+  transition:filter .16s,transform .06s;
+}
+.btn-primary:hover{filter:brightness(1.08)}
+.btn-primary:active{transform:translateY(1px)}
+
+.auth-foot{
+  display:flex;justify-content:space-between;align-items:center;gap:16px;
+  margin-top:20px;flex-wrap:wrap;
+}
+.auth-foot p{margin:0;font-size:13px;color:var(--graphite)}
+.linkish{color:var(--bone);text-decoration:underline;text-underline-offset:3px;
+  text-decoration-color:var(--marker-line)}
+.linkish:hover{color:var(--marker)}
+.skip{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;color:var(--graphite-dim)}
+.skip:hover{color:var(--graphite)}
+
+/* ────────────────────────────────────────────────────────────
+   SCREEN 2 — WORKSPACE
+   ──────────────────────────────────────────────────────────── */
+#app{display:none;height:100dvh;grid-template-rows:52px minmax(0,1fr)}
+#app.show{display:grid}
+
+.topbar{
+  display:flex;align-items:center;gap:18px;padding:0 16px;
+  border-bottom:1px solid var(--rule);background:var(--chrome);
+}
+.topbar .divider{width:1px;height:20px;background:var(--rule-strong)}
+.doc-id{display:flex;align-items:baseline;gap:12px;min-width:0}
+.doc-id .name{
+  font-family:var(--mono);font-size:12.5px;color:var(--read);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.doc-id .meta{
+  font-family:var(--mono);font-size:10.5px;color:var(--graphite-dim);white-space:nowrap;
+}
+.dot{display:inline-block;width:5px;height:5px;border-radius:50%;
+  background:var(--marker);margin-right:6px;vertical-align:middle}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.avatar{
+  width:27px;height:27px;border-radius:50%;background:var(--raise);
+  border:1px solid var(--rule-strong);display:grid;place-items:center;
+  font-family:var(--mono);font-size:10.5px;color:var(--graphite);
+}
+
+.workspace{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,.88fr);min-height:0}
+
+/* ── paper pane ─────────────────────────────────────────── */
+.paper-pane{display:grid;grid-template-rows:minmax(0,1fr) 42px;min-height:0}
+.paper-scroll{overflow-y:auto;scroll-behavior:smooth;padding:0 20px}
+.paper-scroll::-webkit-scrollbar{width:10px}
+.paper-scroll::-webkit-scrollbar-thumb{background:var(--rule-strong);border-radius:10px}
+.paper-scroll::-webkit-scrollbar-track{background:transparent}
+
+.page{
+  max-width:640px;margin:26px auto;background:var(--page);
+  border:1px solid var(--rule);border-radius:2px;
+  padding:54px 58px 60px;position:relative;
+  box-shadow:0 26px 64px -34px rgba(0,0,0,.95);
+}
+.page-num{
+  position:absolute;bottom:22px;left:0;right:0;text-align:center;
+  font-family:var(--mono);font-size:10.5px;color:var(--graphite-dim);
+}
+
+.paper-stamp{
+  position:absolute;left:-1px;top:54px;
+  writing-mode:vertical-rl;transform:rotate(180deg);
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;
+  color:var(--graphite-dim);
+}
+
+.p-title{
+  font-family:var(--serif);font-weight:600;font-size:25px;line-height:1.24;
+  letter-spacing:-.012em;margin:0 0 16px;
+}
+.p-authors{
+  font-family:var(--serif);font-size:14px;color:var(--read);margin:0 0 3px;
+}
+.p-affil{
+  font-family:var(--serif);font-style:italic;font-size:13px;
+  color:var(--graphite);margin:0 0 26px;
+}
+.p-h{
+  font-family:var(--serif);font-weight:600;font-size:15.5px;
+  margin:26px 0 9px;letter-spacing:.005em;
+}
+.p-h .n{color:var(--graphite-dim);margin-right:9px;font-family:var(--mono);font-size:12px}
+.p-abstract-label{
+  font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--graphite-dim);margin:0 0 8px;
+}
+
+.page p.body{
+  font-family:var(--serif);font-size:14.5px;line-height:1.74;color:var(--read);
+  margin:0 0 13px;position:relative;
+}
+
+/* margin rule + key that appear once a paragraph has been cited */
+.page p.body[data-chunk]{cursor:default}
+.page p.body[data-chunk].cited{cursor:pointer}
+.page p.body[data-chunk].cited::before{
+  content:'';position:absolute;left:-26px;top:.3em;bottom:.3em;width:2px;
+  background:var(--marker-line);opacity:.5;transition:opacity .2s;
+}
+.page p.body[data-chunk].cited::after{
+  content:attr(data-key);position:absolute;left:-46px;top:.15em;
+  font-family:var(--mono);font-size:9.5px;color:var(--marker);opacity:.55;
+  transition:opacity .2s;
+}
+.page p.body[data-chunk].cited:hover::before,
+.page p.body[data-chunk].cited:hover::after{opacity:.95}
+.page p.body[data-chunk].active::before,
+.page p.body[data-chunk].active::after{opacity:1}
+.page p.body[data-chunk].active{background:var(--marker-wash);
+  box-shadow:0 0 0 8px var(--marker-wash);border-radius:1px}
+
+/* the ink itself */
+.passage{
+  background-image:linear-gradient(var(--marker-soft),var(--marker-soft));
+  background-repeat:no-repeat;background-position:left center;background-size:0% 100%;
+  box-decoration-break:clone;-webkit-box-decoration-break:clone;
+}
+.passage.lit{
+  background-size:100% 100%;
+  transition:background-size .52s cubic-bezier(.22,1,.36,1);
+  color:var(--bone);
+}
+
+table.p-table{
+  width:100%;border-collapse:collapse;margin:14px 0 8px;
+  font-family:var(--mono);font-size:11.5px;
+}
+table.p-table caption{
+  caption-side:top;text-align:left;font-family:var(--serif);font-size:13px;
+  font-style:italic;color:var(--graphite);padding-bottom:9px;
+}
+table.p-table th{
+  text-align:right;font-weight:500;color:var(--graphite);
+  border-bottom:1px solid var(--rule-strong);padding:6px 8px;
+}
+table.p-table th:first-child,table.p-table td:first-child{text-align:left}
+table.p-table td{text-align:right;padding:5px 8px;color:var(--read);
+  border-bottom:1px solid var(--rule)}
+table.p-table tr:last-child td{border-bottom:1px solid var(--rule-strong)}
+td.pos{color:var(--marker)}
+td.neg{color:var(--graphite)}
+
+.paper-foot{
+  display:flex;align-items:center;justify-content:center;gap:14px;
+  border-top:1px solid var(--rule);background:var(--chrome);
+}
+.pg-btn{
+  width:26px;height:24px;border-radius:3px;color:var(--graphite);
+  display:grid;place-items:center;transition:background .15s,color .15s;
+}
+.pg-btn:hover{background:var(--raise);color:var(--bone)}
+.pg-count{font-family:var(--mono);font-size:11.5px;color:var(--graphite)}
+.pg-count b{color:var(--bone);font-weight:500}
+
+/* ── chat pane ──────────────────────────────────────────── */
+.chat-pane{
+  display:grid;grid-template-rows:minmax(0,1fr) auto;min-height:0;
+  border-left:1px solid var(--rule);background:var(--chrome);
+}
+.thread{overflow-y:auto;padding:24px 26px 8px;display:flex;flex-direction:column;gap:26px}
+.thread::-webkit-scrollbar{width:10px}
+.thread::-webkit-scrollbar-thumb{background:var(--rule-strong);border-radius:10px}
+.thread::-webkit-scrollbar-track{background:transparent}
+
+.turn-q{
+  align-self:flex-end;max-width:88%;background:var(--raise);
+  border:1px solid var(--rule-strong);border-radius:3px;
+  padding:10px 13px;font-size:13.5px;line-height:1.55;color:var(--bone);
+}
+.turn-a{max-width:100%}
+.turn-a .answer{
+  font-size:13.8px;line-height:1.72;color:var(--read);
+}
+.turn-a .answer strong{color:var(--bone);font-weight:500}
+
+/* inline citation — ink underline + mono key */
+.cite{
+  background-image:linear-gradient(var(--marker-soft),var(--marker-soft));
+  background-repeat:no-repeat;background-position:left bottom;
+  background-size:100% 62%;
+  border-bottom:1px solid var(--marker-line);
+  padding:0 1px;color:var(--bone);cursor:pointer;
+  transition:background-size .18s,color .18s;
+  box-decoration-break:clone;-webkit-box-decoration-break:clone;
+}
+.cite:hover,.cite.active{background-size:100% 100%;color:#fff}
+.cite sup{
+  font-family:var(--mono);font-size:9px;color:var(--marker);
+  margin-left:2px;vertical-align:super;line-height:0;
+}
+
+/* retrieval trace */
+.trace{
+  border-left:2px solid var(--rule-strong);padding:2px 0 2px 12px;
+  display:flex;flex-direction:column;gap:5px;margin-bottom:14px;
+}
+.trace-row{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.02em;
+  color:var(--graphite-dim);display:flex;gap:8px;align-items:center;
+  opacity:0;transform:translateY(-2px);
+  animation:traceIn .28s ease forwards;
+}
+.trace-row .tick{color:var(--marker);opacity:.75}
+.trace-row.done{color:var(--graphite)}
+@keyframes traceIn{to{opacity:1;transform:none}}
+
+/* sources strip */
+.sources{margin-top:14px;padding-top:12px;border-top:1px solid var(--rule)}
+.sources-label{margin-bottom:8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:5px 9px;border:1px solid var(--rule-strong);border-radius:3px;
+  background:var(--void);font-family:var(--mono);font-size:10.5px;
+  color:var(--graphite);transition:border-color .16s,color .16s,background .16s;
+}
+.chip:hover,.chip.active{border-color:var(--marker-line);color:var(--bone);background:var(--marker-wash)}
+.chip .k{color:var(--marker)}
+.chip .score{color:var(--graphite-dim)}
+.chip:hover .score{color:var(--graphite)}
+
+/* composer */
+.composer{border-top:1px solid var(--rule);padding:14px 26px 18px;background:var(--chrome)}
+.suggests{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:11px}
+.suggest{
+  padding:6px 10px;border:1px solid var(--rule-strong);border-radius:14px;
+  font-size:12px;color:var(--graphite);transition:border-color .16s,color .16s;
+}
+.suggest:hover{border-color:var(--marker-line);color:var(--bone)}
+.input-wrap{
+  display:flex;align-items:center;gap:10px;background:var(--void);
+  border:1px solid var(--rule-strong);border-radius:4px;padding:4px 4px 4px 13px;
+  transition:border-color .16s;
+}
+.input-wrap:focus-within{border-color:var(--marker-line)}
+.input-wrap input{
+  flex:1;background:none;border:0;outline:none;color:var(--bone);
+  font-size:13.5px;padding:8px 0;
+}
+.input-wrap input::placeholder{color:var(--graphite-dim)}
+.send{
+  width:30px;height:30px;border-radius:3px;background:var(--raise);
+  display:grid;place-items:center;color:var(--graphite);transition:background .16s,color .16s;
+}
+.send:hover{background:var(--marker);color:#171004}
+.composer-note{
+  font-family:var(--mono);font-size:10px;color:var(--graphite-dim);
+  margin:9px 0 0;text-align:center;letter-spacing:.03em;
+}
+
+/* mobile */
+.pane-switch{display:none;margin-left:auto;gap:2px;background:var(--void);
+  border:1px solid var(--rule-strong);border-radius:4px;padding:2px}
+.pane-switch button{
+  padding:4px 11px;border-radius:2px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.06em;color:var(--graphite);text-transform:uppercase;
+}
+.pane-switch button.on{background:var(--raise);color:var(--bone)}
+
+@media (max-width:940px){
+  .workspace{grid-template-columns:1fr}
+  .chat-pane{border-left:0}
+  .paper-pane,.chat-pane{display:none}
+  .workspace.show-paper .paper-pane{display:grid}
+  .workspace.show-chat .chat-pane{display:grid}
+  .pane-switch{display:flex}
+  .topbar-right .avatar{display:none}
+  .page{padding:38px 30px 52px}
+  .page p.body[data-chunk].cited::after{display:none}
+  .page p.body[data-chunk].cited::before{left:-14px}
+  .auth-title{font-size:34px}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important;transition-duration:.01ms !important}
+  .paper-scroll{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════ AUTH ══════════════════ -->
+<div id="auth">
+  <div class="stamp"><p>corpus · retrieval-augmented document q&a</p></div>
+  <div class="auth-body">
+    <div class="auth-col">
+      <div class="auth-head">
+        <div class="wordmark">
+          <svg width="17" height="17" viewBox="0 0 17 17" fill="none" aria-hidden="true">
+            <rect x=".5" y=".5" width="16" height="16" rx="2" stroke="#5C6573"/>
+            <rect x="4" y="4.5" width="9" height="1.4" fill="#8C95A3"/>
+            <rect x="4" y="7.8" width="9" height="1.4" fill="#E0A244"/>
+            <rect x="4" y="11.1" width="6" height="1.4" fill="#8C95A3"/>
+          </svg>
+          <span>Corpus</span>
+        </div>
+        <h1 class="auth-title">Ask your documents.<br>Keep the <em>receipts</em>.</h1>
+        <p class="auth-sub">Every answer points back to the passage it came from.</p>
+      </div>
+
+      <div class="auth-abstract">
+        <div class="eyebrow">Abstract</div>
+        <p>Corpus indexes your PDFs into structure-aware passages, retrieves with combined
+        vector and keyword search, and answers only from what it finds. Click any citation
+        to land on the exact sentence in the source.</p>
+      </div>
+
+      <form id="auth-form" autocomplete="off">
+        <div class="field" id="field-name">
+          <label for="i-name">Name</label>
+          <input id="i-name" type="text" placeholder="Shehryar" />
+        </div>
+        <div class="field">
+          <label for="i-email">Email</label>
+          <input id="i-email" type="email" value="you@corpus.dev" />
+        </div>
+        <div class="field">
+          <label for="i-pass">Password</label>
+          <input id="i-pass" type="password" value="prototype" />
+        </div>
+        <button class="btn-primary" id="auth-submit" type="submit">Sign in</button>
+      </form>
+
+      <div class="auth-foot">
+        <p id="auth-switch-text">New here? <button class="linkish" id="auth-switch">Create an account</button></p>
+        <button class="skip" id="skip">skip →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ WORKSPACE ══════════════════ -->
+<div id="app">
+  <header class="topbar">
+    <div class="wordmark">
+      <svg width="17" height="17" viewBox="0 0 17 17" fill="none" aria-hidden="true">
+        <rect x=".5" y=".5" width="16" height="16" rx="2" stroke="#5C6573"/>
+        <rect x="4" y="4.5" width="9" height="1.4" fill="#8C95A3"/>
+        <rect x="4" y="7.8" width="9" height="1.4" fill="#E0A244"/>
+        <rect x="4" y="11.1" width="6" height="1.4" fill="#8C95A3"/>
+      </svg>
+      <span>Corpus</span>
+    </div>
+    <div class="divider"></div>
+    <div class="doc-id">
+      <span class="name">joint-pruning-quantization.pdf</span>
+      <span class="meta"><span class="dot"></span>indexed · 2,341 chunks · 4 pages</span>
+    </div>
+    <div class="pane-switch" id="pane-switch">
+      <button data-pane="paper" class="on">Paper</button>
+      <button data-pane="chat">Chat</button>
+    </div>
+    <div class="topbar-right">
+      <div class="avatar">SH</div>
+    </div>
+  </header>
+
+  <div class="workspace show-paper" id="workspace">
+
+    <!-- ── PAPER ─────────────────────────────────────── -->
+    <section class="paper-pane" aria-label="Source document">
+      <div class="paper-scroll" id="paper-scroll">
+
+        <!-- page 1 -->
+        <article class="page" id="pg-1">
+          <div class="paper-stamp">arXiv:2511.04872v2 [cs.LG] 18 Nov 2025</div>
+          <h1 class="p-title">Joint Pruning-Aware Quantization Across Model Scales</h1>
+          <p class="p-authors">R. Adeyemi · L. Nakashima · P. Sørensen</p>
+          <p class="p-affil">Institute for Efficient Computation</p>
+
+          <div class="p-abstract-label">Abstract</div>
+          <p class="body" data-chunk="c01">Compressing large language models typically proceeds in two
+          stages: unstructured pruning followed by post-training quantization. We ask whether performing
+          these steps jointly — optimizing a single objective aware of both the sparsity mask and the
+          quantization grid — outperforms applying them in sequence. Across the Pythia suite from 70M to
+          6.9B parameters, we find that <span class="passage">joint compression yields a consistent
+          advantage at small scale, but that the advantage narrows and then reverses as model size
+          grows</span>. We attribute this to the increasing redundancy of large models, which makes the
+          sequential approximation error less costly to absorb.</p>
+
+          <h2 class="p-h"><span class="n">1</span>Introduction</h2>
+          <p class="body" data-chunk="c02">Deployment cost, not training cost, dominates the lifetime
+          expense of a served language model. Pruning and quantization are the two dominant levers for
+          reducing it, and both are well characterised in isolation.
+          <span class="passage">Practitioners almost universally apply them sequentially, largely for
+          engineering convenience: pruning tooling and quantization tooling are maintained
+          separately</span>. Whether that convenience carries an accuracy cost, and whether any such
+          cost is uniform across model scale, has not been measured systematically.</p>
+
+          <p class="body">We make three contributions. First, we formalise a joint objective that treats
+          the sparsity mask and the quantization scale as a single optimization problem. Second, we
+          evaluate it against a strong sequential baseline at seven model sizes spanning two orders of
+          magnitude. Third, we characterise a crossover point beyond which joint optimization no longer
+          pays for its additional complexity.</p>
+
+          <div class="page-num">1</div>
+        </article>
+
+        <!-- page 2 -->
+        <article class="page" id="pg-2">
+          <h2 class="p-h" style="margin-top:0"><span class="n">2</span>Background</h2>
+          <p class="body">Magnitude pruning removes weights whose absolute value falls below a
+          layer-wise threshold. Post-training quantization maps the surviving weights onto a lower-bit
+          grid, typically by minimising per-channel reconstruction error against a small calibration
+          set. Applied in sequence, the second stage inherits whatever error the first introduced and
+          cannot revisit it.</p>
+
+          <h2 class="p-h"><span class="n">3</span>Method</h2>
+          <h3 class="p-h" style="font-size:14px;margin-top:16px"><span class="n">3.1</span>Joint objective</h3>
+          <p class="body" data-chunk="c03"><span class="passage">We define a single objective in which
+          the sparsity mask M and the quantization scale s are optimized together against a calibration
+          set</span>, rather than fixing M before s is chosen. Because the mask is discrete,
+          <span class="passage">we relax it during optimization using a straight-through estimator and
+          anneal the temperature over 500 steps</span>, recovering a hard mask at convergence.</p>
+
+          <h3 class="p-h" style="font-size:14px;margin-top:16px"><span class="n">3.2</span>Sequential baseline</h3>
+          <p class="body" data-chunk="c04">The sequential baseline follows standard practice:
+          <span class="passage">we prune to the target sparsity using magnitude criteria with layer-wise
+          calibration, then quantize the surviving weights to 4 bits using GPTQ with 128 calibration
+          sequences</span>. This is a deliberately strong baseline — it is the configuration most
+          production pipelines converge on.</p>
+
+          <h2 class="p-h"><span class="n">4</span>Experimental setup</h2>
+          <p class="body" data-chunk="c05"><span class="passage">We evaluate on the Pythia scaling suite
+          at 70M, 160M, 410M, 1.0B, 1.4B, 2.8B and 6.9B parameters</span>. Calibration uses 256 sequences
+          of length 2048 drawn from the Pile validation split. <span class="passage">We report zero-shot
+          accuracy averaged over ARC-e, HellaSwag, PIQA and WinoGrande, and perplexity on
+          WikiText-103</span>. All runs use 50% unstructured sparsity and 4-bit weight-only quantization.</p>
+
+          <div class="page-num">2</div>
+        </article>
+
+        <!-- page 3 -->
+        <article class="page" id="pg-3">
+          <h2 class="p-h" style="margin-top:0"><span class="n">5</span>Results</h2>
+          <h3 class="p-h" style="font-size:14px;margin-top:16px"><span class="n">5.1</span>Aggregate</h3>
+          <p class="body" data-chunk="c06"><span class="passage">Averaged over all scales, joint
+          compression improves mean zero-shot accuracy by 0.8 points over the sequential baseline</span>
+          at 50% sparsity and 4-bit weights. <span class="passage">The aggregate figure conceals a strong
+          dependence on scale</span>, which we examine next.</p>
+
+          <div data-chunk="c08" class="body" style="margin-bottom:18px">
+            <table class="p-table">
+              <caption>Table 1: Mean zero-shot accuracy (%) at 50% sparsity, 4-bit weights.</caption>
+              <thead>
+                <tr><th>Model</th><th>Sequential</th><th>Joint</th><th>Δ</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Pythia-70M</td><td>34.1</td><td>36.4</td><td class="pos">+2.3</td></tr>
+                <tr><td>Pythia-160M</td><td>38.7</td><td>40.6</td><td class="pos">+1.9</td></tr>
+                <tr><td>Pythia-410M</td><td>43.2</td><td>44.8</td><td class="pos">+1.6</td></tr>
+                <tr><td>Pythia-1.0B</td><td>47.9</td><td>48.7</td><td class="pos">+0.8</td></tr>
+                <tr><td>Pythia-1.4B</td><td>50.3</td><td>50.4</td><td class="pos">+0.1</td></tr>
+                <tr><td>Pythia-2.8B</td><td>54.1</td><td>53.8</td><td class="neg">−0.3</td></tr>
+                <tr><td>Pythia-6.9B</td><td>58.6</td><td>58.0</td><td class="neg">−0.6</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 class="p-h" style="font-size:14px"><span class="n">5.2</span>Scale dependence</h3>
+          <p class="body" data-chunk="c07"><span class="passage">The benefit of joint optimization is
+          monotonically decreasing in model scale</span>. It is largest at 70M (+2.3 points) and
+          <span class="passage">crosses zero between 1.4B and 2.8B parameters</span>, after which the
+          sequential baseline is marginally better. We interpret this as evidence that
+          <span class="passage">larger models carry enough redundancy to absorb the approximation error
+          introduced by treating pruning and quantization as independent stages</span>.</p>
+
+          <div class="page-num">3</div>
+        </article>
+
+        <!-- page 4 -->
+        <article class="page" id="pg-4">
+          <h2 class="p-h" style="margin-top:0"><span class="n">6</span>Limitations</h2>
+          <p class="body" data-chunk="c09"><span class="passage">Our results cover a single model family
+          and a single sparsity target</span>. We did not evaluate
+          <span class="passage">structured sparsity, which interacts differently with hardware
+          kernels</span>, and our quantization is weight-only; activation quantization may shift the
+          crossover point. Finally, <span class="passage">calibration set size was held fixed at 256
+          sequences</span>, and joint optimization may be more sensitive to this choice than the
+          sequential baseline.</p>
+
+          <h2 class="p-h"><span class="n">7</span>Conclusion</h2>
+          <p class="body">Joint pruning-aware quantization is worth its complexity below roughly one
+          billion parameters and not above it. For teams serving models in the multi-billion range, the
+          conventional sequential pipeline remains the better engineering trade.</p>
+
+          <div class="page-num">4</div>
+        </article>
+
+      </div>
+
+      <div class="paper-foot">
+        <button class="pg-btn" id="pg-prev" aria-label="Previous page">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M8 3L5 6.5L8 10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <span class="pg-count">page <b id="pg-cur">1</b> / 4</span>
+        <button class="pg-btn" id="pg-next" aria-label="Next page">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M5 3L8 6.5L5 10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <!-- ── CHAT ──────────────────────────────────────── -->
+    <section class="chat-pane" aria-label="Conversation">
+      <div class="thread" id="thread"></div>
+
+      <div class="composer">
+        <div class="suggests" id="suggests"></div>
+        <div class="input-wrap">
+          <input id="q-input" type="text" placeholder="Ask about this paper…" aria-label="Ask a question" />
+          <button class="send" id="send" aria-label="Send question">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.5 7h9M8 3.5L11.5 7 8 10.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+        <p class="composer-note">answers are generated only from indexed passages</p>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════
+   DATA — stands in for what the backend will return
+   ══════════════════════════════════════════════════════════ */
+const CHUNKS = {
+  c01:{page:1,section:'Abstract',            score:.91},
+  c02:{page:1,section:'§1 Introduction',     score:.74},
+  c03:{page:2,section:'§3.1 Joint objective',score:.94},
+  c04:{page:2,section:'§3.2 Sequential baseline',score:.88},
+  c05:{page:2,section:'§4 Experimental setup',score:.93},
+  c06:{page:3,section:'§5.1 Aggregate',      score:.86},
+  c07:{page:3,section:'§5.2 Scale dependence',score:.96},
+  c08:{page:3,section:'Table 1',             score:.89},
+  c09:{page:4,section:'§6 Limitations',      score:.92},
+};
+
+/* {{chunkId|phrase the model grounded in that chunk}} */
+const ANSWERS = [
+  {
+    match:['scale','every','beat','joint','sequential','better','crossover','reverse'],
+    q:'Does joint compression beat sequential at every model scale?',
+    a:`No — and that's the paper's main finding. {{c07|The benefit of joint optimization is monotonically decreasing in model scale}}: it peaks at +2.3 points on the 70M model and {{c07|crosses zero between 1.4B and 2.8B parameters}}, after which sequential is marginally ahead — {{c08|−0.6 points at 6.9B}}.
+
+The explanation offered is that {{c07|larger models carry enough redundancy to absorb the approximation error from treating the two stages independently}}.
+
+Worth flagging that the headline number is an average: {{c06|the aggregate +0.8 point gain conceals this scale dependence}} entirely.`
+  },
+  {
+    match:['objective','optimi','mask','straight-through','method','how','anneal'],
+    q:'How is the joint objective actually optimized?',
+    a:`{{c03|The sparsity mask M and the quantization scale s are optimized together against a calibration set}}, instead of fixing the mask first and quantizing whatever survives.
+
+The mask is discrete, so {{c03|it's relaxed during optimization with a straight-through estimator, with the temperature annealed over 500 steps}} before a hard mask is recovered.
+
+The comparison point is deliberately strong: {{c04|magnitude pruning with layer-wise calibration, then GPTQ to 4 bits over 128 calibration sequences}}.`
+  },
+  {
+    match:['model','dataset','setup','pythia','evaluat','benchmark','data'],
+    q:'What models and benchmarks were used?',
+    a:`{{c05|The Pythia scaling suite at seven sizes — 70M, 160M, 410M, 1.0B, 1.4B, 2.8B and 6.9B parameters}}. Calibration uses 256 sequences of length 2048 from the Pile validation split.
+
+Results are reported as {{c05|zero-shot accuracy averaged over ARC-e, HellaSwag, PIQA and WinoGrande, plus WikiText-103 perplexity}}, all at 50% unstructured sparsity and 4-bit weight-only quantization.`
+  },
+  {
+    match:['limit','weakness','caveat','not test','future','gap'],
+    q:'What do the authors say they did not test?',
+    a:`Three gaps, stated plainly. {{c09|The results cover a single model family and a single sparsity target}}. They skipped {{c09|structured sparsity, which interacts differently with hardware kernels}}, and their quantization is weight-only — activation quantization could move the crossover.
+
+They also note {{c09|the calibration set was held fixed at 256 sequences}}, and suspect the joint method is more sensitive to that choice than the baseline is.`
+  },
+];
+
+const FALLBACK = {
+  a:`The paper compares two ways of compressing language models: pruning then quantizing in sequence, versus {{c01|a single objective aware of both the sparsity mask and the quantization grid}}. Its headline result is that {{c01|joint compression helps at small scale but the advantage narrows and reverses as models grow}}.
+
+If you want the specifics, ask about the method, the experimental setup, the scale crossover, or the limitations.`
+};
+
+const PREFILL = {
+  q:'What is this paper arguing?',
+  a:`It argues that the standard two-stage compression pipeline is fine — but only above a certain size. {{c02|Practitioners apply pruning and quantization sequentially mostly for engineering convenience}}, and the paper asks what that convenience costs.
+
+The answer: {{c01|joint compression wins at small scale, then loses at large scale}}.`
+};
+
+/* ══════════════════════════════════════════════════════════
+   AUTH
+   ══════════════════════════════════════════════════════════ */
+const authEl = document.getElementById('auth');
+const appEl  = document.getElementById('app');
+
+const switchText = document.getElementById('auth-switch-text');
+switchText.addEventListener('click', (e) => {
+  if(!e.target.closest('#auth-switch')) return;
+  const signup = authEl.classList.toggle('signup');
+  document.getElementById('auth-submit').textContent = signup ? 'Create account' : 'Sign in';
+  switchText.innerHTML = signup
+    ? 'Already have an account? <button class="linkish" id="auth-switch">Sign in</button>'
+    : 'New here? <button class="linkish" id="auth-switch">Create an account</button>';
+});
+
+function enterApp(e){
+  if(e) e.preventDefault();
+  authEl.classList.add('hide');
+  appEl.classList.add('show');
+  if(!thread.childElementCount) bootThread();
+}
+document.getElementById('auth-form').addEventListener('submit', enterApp);
+document.getElementById('skip').addEventListener('click', enterApp);
+
+/* ══════════════════════════════════════════════════════════
+   PAPER PANE
+   ══════════════════════════════════════════════════════════ */
+const scroller = document.getElementById('paper-scroll');
+const pgCur = document.getElementById('pg-cur');
+let currentPage = 1;
+
+const pageObserver = new IntersectionObserver((entries) => {
+  entries.forEach(en => {
+    if(en.isIntersecting){
+      currentPage = +en.target.id.split('-')[1];
+      pgCur.textContent = currentPage;
+    }
+  });
+},{root:scroller,threshold:.4});
+document.querySelectorAll('.page').forEach(p => pageObserver.observe(p));
+
+function goPage(n){
+  n = Math.min(4, Math.max(1, n));
+  document.getElementById('pg-'+n).scrollIntoView({block:'start'});
+}
+document.getElementById('pg-prev').addEventListener('click', () => goPage(currentPage-1));
+document.getElementById('pg-next').addEventListener('click', () => goPage(currentPage+1));
+
+/* ── the signature interaction: land on the passage ──────── */
+let activeChunk = null;
+
+function revealChunk(id){
+  const para = document.querySelector(`[data-chunk="${id}"]`);
+  if(!para) return;
+
+  // on narrow screens, switch to the paper pane first
+  if(window.matchMedia('(max-width:940px)').matches) setPane('paper');
+
+  document.querySelectorAll('[data-chunk].active').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.cite.active, .chip.active').forEach(c => c.classList.remove('active'));
+
+  para.classList.add('cited','active');
+  para.dataset.key = id;
+  activeChunk = id;
+
+  const top = para.offsetTop - scroller.clientHeight/2 + para.clientHeight/2;
+  scroller.scrollTo({top: Math.max(0, top - 40), behavior:'smooth'});
+
+  // marker stroke, left to right
+  const passages = para.querySelectorAll('.passage');
+  passages.forEach(s => s.classList.remove('lit'));
+  requestAnimationFrame(() => setTimeout(() => {
+    passages.forEach((s,i) => setTimeout(() => s.classList.add('lit'), i*110));
+  }, 180));
+
+  document.querySelectorAll(`.cite[data-chunk="${id}"], .chip[data-chunk="${id}"]`)
+    .forEach(c => c.classList.add('active'));
+}
+
+// reverse direction: click a marked paragraph, jump to the answer that used it
+scroller.addEventListener('click', (e) => {
+  const para = e.target.closest('[data-chunk].cited');
+  if(!para) return;
+  const cite = document.querySelector(`.cite[data-chunk="${para.dataset.chunk}"]`);
+  if(!cite) return;
+  if(window.matchMedia('(max-width:940px)').matches) setPane('chat');
+  cite.scrollIntoView({block:'center',behavior:'smooth'});
+  cite.classList.add('active');
+  setTimeout(() => cite.classList.remove('active'), 1400);
+});
+
+/* ══════════════════════════════════════════════════════════
+   CHAT
+   ══════════════════════════════════════════════════════════ */
+const thread   = document.getElementById('thread');
+const input    = document.getElementById('q-input');
+const suggests = document.getElementById('suggests');
+let citeCounter = 0;
+let busy = false;
+
+const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** "text {{c07|phrase}} text" → [{type,text,id}] */
+function parseAnswer(src){
+  const out = [];
+  const re = /\{\{(c\d+)\|([^}]+)\}\}/g;
+  let last = 0, m;
+  while((m = re.exec(src))){
+    if(m.index > last) out.push({type:'text', text: src.slice(last, m.index)});
+    out.push({type:'cite', id:m[1], text:m[2]});
+    last = m.index + m[0].length;
+  }
+  if(last < src.length) out.push({type:'text', text: src.slice(last)});
+  return out;
+}
+
+function addQuestion(text){
+  const el = document.createElement('div');
+  el.className = 'turn-q';
+  el.textContent = text;
+  thread.appendChild(el);
+  thread.scrollTop = thread.scrollHeight;
+}
+
+const TRACE = [
+  'rewrite  → standalone query',
+  'search   → 2,341 chunks · vector + bm25',
+  'fuse     → rrf · 20 candidates',
+  'rerank   → top 5',
+];
+
+async function runTrace(box){
+  const trace = document.createElement('div');
+  trace.className = 'trace';
+  box.appendChild(trace);
+  for(const line of TRACE){
+    const row = document.createElement('div');
+    row.className = 'trace-row';
+    row.innerHTML = `<span class="tick">▸</span><span>${line}</span>`;
+    trace.appendChild(row);
+    thread.scrollTop = thread.scrollHeight;
+    await wait(reduced ? 40 : 300);
+    row.classList.add('done');
+  }
+  await wait(reduced ? 40 : 220);
+  return trace;
+}
+
+function wait(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+async function streamAnswer(src, box, instant){
+  const body = document.createElement('div');
+  body.className = 'answer';
+  body.setAttribute('aria-live','polite');
+  box.appendChild(body);
+
+  const segs  = parseAnswer(src);
+  const used  = [];
+  let para = document.createElement('p');
+  para.style.margin = '0 0 11px';
+  body.appendChild(para);
+
+  for(const seg of segs){
+    if(seg.type === 'text'){
+      const parts = seg.text.split('\n\n');
+      for(let i = 0; i < parts.length; i++){
+        if(i > 0){
+          para = document.createElement('p');
+          para.style.margin = '0 0 11px';
+          body.appendChild(para);
+        }
+        await typeInto(para, parts[i], instant);
+      }
+    } else {
+      if(!used.includes(seg.id)) used.push(seg.id);
+      citeCounter++;
+      const btn = document.createElement('button');
+      btn.className = 'cite';
+      btn.dataset.chunk = seg.id;
+      btn.title = `${CHUNKS[seg.id].section} · page ${CHUNKS[seg.id].page}`;
+      para.appendChild(btn);
+      await typeInto(btn, seg.text, instant);
+      const sup = document.createElement('sup');
+      sup.textContent = used.indexOf(seg.id) + 1;
+      btn.appendChild(sup);
+      btn.addEventListener('click', () => revealChunk(seg.id));
+    }
+  }
+  return used;
+}
+
+async function typeInto(node, text, instant){
+  if(instant || reduced){
+    node.appendChild(document.createTextNode(text));
+    return;
+  }
+  const tn = document.createTextNode('');
+  node.appendChild(tn);
+  const step = 2;
+  for(let i = 0; i < text.length; i += step){
+    tn.data += text.slice(i, i + step);
+    if(i % 24 === 0) thread.scrollTop = thread.scrollHeight;
+    await wait(11);
+  }
+  thread.scrollTop = thread.scrollHeight;
+}
+
+function addSources(box, ids){
+  const wrap = document.createElement('div');
+  wrap.className = 'sources';
+  wrap.innerHTML = `<div class="eyebrow sources-label">Retrieved from</div>`;
+  const chips = document.createElement('div');
+  chips.className = 'chips';
+  ids.forEach((id, i) => {
+    const c = CHUNKS[id];
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.dataset.chunk = id;
+    b.innerHTML = `<span class="k">${i+1}</span>
+      <span>p${c.page} · ${c.section}</span>
+      <span class="score">${c.score.toFixed(2)}</span>`;
+    b.addEventListener('click', () => revealChunk(id));
+    chips.appendChild(b);
+  });
+  wrap.appendChild(chips);
+  box.appendChild(wrap);
+  thread.scrollTop = thread.scrollHeight;
+}
+
+function pickAnswer(q){
+  const s = q.toLowerCase();
+  let best = null, bestHits = 0;
+  for(const cand of ANSWERS){
+    const hits = cand.match.filter(k => s.includes(k)).length;
+    if(hits > bestHits){ bestHits = hits; best = cand; }
+  }
+  return bestHits ? best : FALLBACK;
+}
+
+async function ask(text, opts = {}){
+  if(busy) return;
+  busy = true;
+  input.value = '';
+  addQuestion(text);
+
+  const box = document.createElement('div');
+  box.className = 'turn-a';
+  thread.appendChild(box);
+
+  let trace;
+  if(!opts.instant) trace = await runTrace(box);
+  if(trace) trace.remove();
+
+  const chosen = opts.answer ? {a:opts.answer} : pickAnswer(text);
+  const used = await streamAnswer(chosen.a, box, opts.instant);
+  addSources(box, used);
+
+  // pre-mark every cited paragraph so the margin rules appear in the paper
+  used.forEach(id => {
+    const p = document.querySelector(`[data-chunk="${id}"]`);
+    if(p){ p.classList.add('cited'); p.dataset.key = id; }
+  });
+
+  busy = false;
+  renderSuggests();
+}
+
+/* suggestion chips — drop ones already asked */
+const asked = new Set();
+function renderSuggests(){
+  suggests.innerHTML = '';
+  ANSWERS.filter(a => !asked.has(a.q)).slice(0,2).forEach(a => {
+    const b = document.createElement('button');
+    b.className = 'suggest';
+    b.textContent = a.q;
+    b.addEventListener('click', () => { asked.add(a.q); ask(a.q); });
+    suggests.appendChild(b);
+  });
+}
+
+document.getElementById('send').addEventListener('click', () => {
+  if(input.value.trim()) ask(input.value.trim());
+});
+input.addEventListener('keydown', (e) => {
+  if(e.key === 'Enter' && input.value.trim()) ask(input.value.trim());
+});
+
+async function bootThread(){
+  await ask(PREFILL.q, {instant:true, answer:PREFILL.a});
+}
+
+/* mobile pane switch */
+const workspace = document.getElementById('workspace');
+function setPane(which){
+  workspace.classList.toggle('show-paper', which === 'paper');
+  workspace.classList.toggle('show-chat',  which === 'chat');
+  document.querySelectorAll('#pane-switch button')
+    .forEach(b => b.classList.toggle('on', b.dataset.pane === which));
+}
+document.querySelectorAll('#pane-switch button')
+  .forEach(b => b.addEventListener('click', () => setPane(b.dataset.pane)));
+
+/* on wide screens both panes are always visible */
+function syncPanes(){
+  if(!window.matchMedia('(max-width:940px)').matches){
+    workspace.classList.add('show-paper','show-chat');
+  }
+}
+window.addEventListener('resize', syncPanes);
+syncPanes();
+
+renderSuggests();
+</script>
+</body>
+</html>
