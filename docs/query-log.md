@@ -267,3 +267,63 @@ The full baseline reached the multi-turn tasks case but one unrestricted Ollama 
 The evaluation also confirmed the existing citation-compliance weakness: answers can be factually complete while Ollama omits citation labels, causing the validated sources array and citation metrics to remain empty. The quality harness now measures this explicitly instead of hiding it.
 
 TypeScript passed after the evaluation-only changes. The scoring tests passed 3/3. Production generation, rewriting, query, and route behavior were not changed as part of this evaluation work.
+
+---
+
+## Generation safety and citation reliability follow-up
+
+The query evaluation exposed that an Ollama request could run indefinitely and keep the CPU busy. Added operation-specific output and time limits in `lib/generation.ts`. Normal answer generation and streaming now default to a maximum of 512 output tokens and a 120 second total timeout. Query rewriting uses the same helper with a smaller maximum of 96 output tokens and a 30 second timeout because a rewrite should only be one short standalone question. Ollama receives the token limit through `num_predict`, while `AbortSignal.timeout()` stops a request that exceeds its allowed time.
+
+These are output limits, not target lengths. Ollama can finish before reaching them. The current streaming timeout is one simple total timeout. Separate first-token and inactivity timeouts may be more precise later, but were intentionally not added yet.
+
+Added focused generation tests proving that the default 512-token limit and the operation-specific 96-token limit are sent to Ollama. The focused generation suite passed 6/6 and TypeScript passed.
+
+The evaluation also showed that a factually correct answer can omit citation labels because citation formatting is a model instruction, not a guarantee. Strengthened the answer system prompt with numbered rules: every factual claim needs a citation, only supplied source IDs may be used, multiple sources use `[S1][S2]`, page numbers and source wrappers are forbidden, and an insufficient-context answer uses one exact refusal without a citation. Added correct and incorrect citation examples because the local Llama model follows concrete output examples more reliably than a vague citation request.
+
+Added `buildCitationRetryMessages()` and one retry in the non-streaming `queryConversation()` flow. After the first answer, citation validation already tells us whether no valid source was cited or an unknown label was invented. Either condition triggers exactly one correction request containing the original grounded prompt, the first answer, and the allowed labels. The retry asks only for citation correction and forbids new facts. A valid first answer does not pay for a second Ollama call.
+
+A real evaluation of the four NLP tasks reproduced the missing-citation problem on the first answer, triggered the retry, and returned the correct answer with `[S1]`. Fact coverage, citation presence, and expected-page citation all scored 1.000. The tradeoff was latency: the complete request took about 120 seconds because Ollama generated twice. Prompt, citation, and generation tests passed, and TypeScript passed.
+
+Important remaining consistency gap: the one-time citation retry currently exists only in the normal JSON query path. The SSE path streams tokens to the client immediately and validates the completed answer afterward, so it cannot silently replace already-streamed text with a corrected retry. The stronger original prompt does apply to both paths. Deciding how SSE reports or repairs a citation failure is still open.
+
+---
+
+## Query phase completion audit
+
+### Implemented
+
+- Query HTTP endpoint with document ID, question, and optional conversation ID validation.
+- Query embeddings using the query embedding mode.
+- Postgres cosine vector retrieval scoped to one document.
+- Postgres full-text keyword retrieval with searchable text support.
+- Reciprocal Rank Fusion combining vector and keyword rankings.
+- Local cross-encoder reranking of the best fused candidates.
+- Top-five context construction with stable source labels and page metadata.
+- Grounded Ollama answer generation using the original question and retrieved context.
+- Citation syntax normalization, allow-list validation, invented-label removal, and cited-source mapping.
+- Strong citation prompt and one corrective retry for the non-streaming path.
+- Conversation and message persistence.
+- Recent-history loading, follow-up question rewriting, and history-aware answer generation.
+- Backend token streaming from Ollama.
+- SSE route with conversation, status, token, done, and error events.
+- Unit, Postgres integration, real-model, SSE route, and real end-to-end streaming tests.
+- Retrieval evaluations for vector, keyword, hybrid, and reranked strategies.
+- Query quality evaluations for factual coverage, refusal behavior, citations, expected pages, follow-ups, latency, and streaming timing.
+- Output-token limits and request timeouts for rewrite, normal generation, and streaming generation.
+
+### Partially implemented
+
+- Conversation memory is implemented as stored messages plus the latest 10 messages supplied to rewriting and generation. There is no long-conversation summarization, semantic memory, or user-level memory. This is enough for the current multi-turn document chat.
+- Citations are complete on the backend for canonical labels and source metadata. The frontend behavior that turns a citation into a clickable PDF page and highlighted passage is not implemented because there is no frontend yet.
+- SSE is complete and tested on the backend. The frontend SSE reader is intentionally deferred until frontend work starts.
+- Evals are implemented and runnable. The retrieval comparison has measured results, but the full query dataset should be rerun after the timeout and citation changes. The README eval table still contains placeholders.
+- Streaming answers use the stronger citation prompt and final validation, but do not have the non-streaming citation retry described above.
+
+### Not implemented
+
+- Multi-tenancy. The schema has no users or organizations, documents have no owner ID, routes have no authentication, and there are no Postgres row-level-security policies. The README currently claims multi-tenant isolation and RLS, so either this feature must be built or that claim must be removed until it is true.
+- Frontend chat interface, SSE reader, conversation state, source list, PDF viewer, citation clicking, and passage highlighting.
+- Small-to-big retrieval as described in the README. The current pipeline retrieves and sends the same chunks; it does not retrieve a small child chunk and expand it to a larger parent section.
+- A complete post-fix query evaluation baseline across every case. The earlier full run was interrupted before the safety limits existed.
+
+For the backend query MVP, the main retrieval, generation, conversation, citation, SSE, and evaluation pieces are now present. The clean next product phase is the frontend. If the README's production-style promises are the target, multi-tenancy and RLS should be implemented before deployment, and small-to-big retrieval should either be implemented or removed from the advertised feature list.
