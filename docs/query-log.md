@@ -239,3 +239,11 @@ After preparation succeeds, Hono's `streamSSE()` opens a `text/event-stream` res
 Errors thrown after SSE starts are caught inside the stream callback because the HTTP status can no longer be changed. The route logs the internal error and sends a safe `error` event with `{"message":"Query stream failed"}`. It does not expose Ollama or database details to the client. The streaming service remains responsible for avoiding partial assistant persistence.
 
 Added a real Hono route integration test using Postgres and a controlled Ollama NDJSON stream. It verified the SSE content type, exact success event order, event data, citation-preserved final answer, conversation ID, and stored user/assistant messages. It also verified that a simulated Ollama failure produces conversation, status, and error events and stores only the user message. The route test passed and TypeScript passed.
+
+### Real end-to-end query streaming test
+
+Added `test/query-stream.e2e.test.ts` and `npm run test:query-stream:e2e`. Unlike the controlled route test, this uses the real ingested `test_pdf.pdf`, real Postgres retrieval, the local embedding and reranking models, real Ollama `chatStream()`, the actual Hono `/query/stream` route, and incremental SSE response reading.
+
+The test verifies that the response is SSE, conversation and generating status arrive first, more than one real token event is produced, finalizing status and done arrive last, no error event appears, and the final answer contains SST-2, MNLI, CoNLL-2003, and SQuAD. It also confirms that the done conversation ID matches the first event, the database contains exactly one user and one assistant message, and the saved assistant content equals the final done answer. The temporary conversation is deleted afterward.
+
+The real end-to-end streaming test passed 1/1 in about 122 seconds, and TypeScript passed. Backend streaming is now verified from request through persistence. The frontend stream reader remains intentionally deferred until frontend development begins.
