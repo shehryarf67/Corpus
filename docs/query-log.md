@@ -219,3 +219,13 @@ Refactored the query service so shared preparation is separate from final answer
 `queryConversation()` now calls `prepareQuery()`, handles the no-searchable-content case, calls the existing non-streaming `chat()`, validates citations, saves one complete assistant message, and returns the response. This preserves current `/query` behavior while giving the future SSE path the same prepared messages and sources for `chatStream()`.
 
 Added a focused Postgres integration test proving that preparation retrieves the correct source and stores only the user message. TypeScript passed, all unit tests passed 43/43, and all Postgres integration tests passed 13/13. A real `/query` request against `test_pdf.pdf` correctly returned SST-2, MNLI, CoNLL-2003, and SQuAD. Database inspection confirmed exactly one user and one assistant message, and the temporary conversation was deleted. Ollama again omitted citation labels, so sources were empty even though the factual answer matched the document.
+
+### Streaming query service
+
+Added `services/query-stream.ts` without adding an SSE route. `streamPreparedQuery(prepared)` consumes the existing `PreparedQuery` and produces normal typed application events. The event order is conversation, generating status, one or more token events, finalizing status, then done. The done event contains the final validated answer and cited sources and is emitted only after the complete assistant message is saved.
+
+The service keeps a `rawAnswer` string while forwarding each `chatStream()` text piece. After Ollama finishes, it validates citations against `prepared.sources`, logs invented labels, and saves one complete assistant row rather than one row per token. The no-source path skips Ollama but follows the same event shape using the fixed no-searchable-content answer.
+
+No `finalizeQuery()` helper was introduced. The existing non-streaming `chat()` path and its handling remain in `queryConversation()`, while the streaming path performs its own validation and persistence. Streaming errors deliberately propagate from the service for the future SSE route to catch. A mid-stream failure therefore produces no done event and stores no partial assistant answer.
+
+Added focused Postgres tests for normal event ordering and persistence, the no-source shortcut, and mid-stream error propagation. All streaming-service tests passed 3/3, TypeScript passed, and the complete unit suite passed 43/43. Docker Desktop had to be started because Postgres was initially unavailable. No HTTP or SSE route was created.

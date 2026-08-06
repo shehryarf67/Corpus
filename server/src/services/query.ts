@@ -11,7 +11,7 @@ import { rewriteQuestion } from '../lib/rewrite.js'
 const RETRIEVAL_CANDIDATE_LIMIT = 20
 const RERANK_CANDIDATE_LIMIT = 15
 const CONTEXT_SOURCE_LIMIT = 5
-const NO_SEARCHABLE_CONTENT_ANSWER =
+export const NO_SEARCHABLE_CONTENT_ANSWER =
   'I could not find any searchable content in this document.'
 
 export type QueryResult = {
