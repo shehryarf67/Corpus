@@ -1,9 +1,17 @@
 const OLLAMA_URL = 'http://localhost:11434'
 const MODEL = 'llama3.2'
 
+const ANSWER_MAX_TOKENS = 512
+const ANSWER_TIMEOUT_MS = 120_000
+
 export type ChatMessage = {
   role: 'system' | 'user' | 'assistant'
   content: string
+}
+
+type ChatOptions = {
+  maxTokens?: number
+  timeoutMs?: number
 }
 
 type OllamaStreamChunk = {
@@ -32,7 +40,13 @@ function textFromStreamLine(line: string): string | null {
 // (a system prompt plus a user question), rather than a single flat
 // prompt string — same reasoning as why embed() kept Voyage's
 // document/query distinction even after switching backends.
-export async function chat(messages: ChatMessage[]): Promise<string> {
+export async function chat(
+  messages: ChatMessage[],
+  options: ChatOptions = {}
+): Promise<string> {
+  const maxTokens = options.maxTokens ?? ANSWER_MAX_TOKENS
+  const timeoutMs = options.timeoutMs ?? ANSWER_TIMEOUT_MS
+
   const res = await fetch(`${OLLAMA_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -43,8 +57,13 @@ export async function chat(messages: ChatMessage[]): Promise<string> {
       // A grounded document answer benefits from consistency more than
       // creativity. Temperature 0 reduces random wording and citation-label
       // changes between otherwise identical requests.
-      options: { temperature: 0 },
+      // num_predict is Ollama's maximum output-token setting. The model can
+      // still finish earlier when it has completed the answer.
+      options: { temperature: 0, num_predict: maxTokens },
     }),
+    // Stop a request that has become stuck instead of letting Ollama keep
+    // using CPU forever.
+    signal: AbortSignal.timeout(timeoutMs),
   })
 
   if (!res.ok) {
@@ -59,8 +78,12 @@ export async function chat(messages: ChatMessage[]): Promise<string> {
 // generator reconstructs complete JSON lines and yields each generated text
 // piece to its caller as soon as it arrives.
 export async function* chatStream(
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  options: ChatOptions = {}
 ): AsyncGenerator<string> {
+  const maxTokens = options.maxTokens ?? ANSWER_MAX_TOKENS
+  const timeoutMs = options.timeoutMs ?? ANSWER_TIMEOUT_MS
+
   const res = await fetch(`${OLLAMA_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -68,8 +91,11 @@ export async function* chatStream(
       model: MODEL,
       messages,
       stream: true,
-      options: { temperature: 0 },
+      options: { temperature: 0, num_predict: maxTokens },
     }),
+    // This is currently one simple total timeout for the full stream. We can
+    // later split it into first-token and inactivity timeouts if needed.
+    signal: AbortSignal.timeout(timeoutMs),
   })
 
   if (!res.ok) {

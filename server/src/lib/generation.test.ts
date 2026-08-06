@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
-import { chatStream, type ChatMessage } from './generation.js'
+import { chat, chatStream, type ChatMessage } from './generation.js'
 
 const originalFetch = globalThis.fetch
 const messages: ChatMessage[] = [{ role: 'user', content: 'Hello' }]
@@ -28,6 +28,36 @@ async function collectStream(): Promise<string[]> {
   for await (const piece of chatStream(messages)) pieces.push(piece)
   return pieces
 }
+
+test('chat sends the answer token limit to Ollama', async () => {
+  let requestBody: unknown
+
+  globalThis.fetch = async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body))
+    return Response.json({ message: { content: 'Answer' } })
+  }
+
+  assert.equal(await chat(messages), 'Answer')
+  assert.equal(
+    (requestBody as { options: { num_predict: number } }).options.num_predict,
+    512
+  )
+})
+
+test('chat accepts a smaller operation-specific token limit', async () => {
+  let requestBody: unknown
+
+  globalThis.fetch = async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body))
+    return Response.json({ message: { content: 'Rewritten question' } })
+  }
+
+  await chat(messages, { maxTokens: 96, timeoutMs: 30_000 })
+  assert.equal(
+    (requestBody as { options: { num_predict: number } }).options.num_predict,
+    96
+  )
+})
 
 test('chatStream yields text from multiple NDJSON lines', async () => {
   mockOllamaResponse([

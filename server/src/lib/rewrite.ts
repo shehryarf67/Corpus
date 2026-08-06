@@ -7,6 +7,9 @@ Use the conversation history only to resolve references such as "it", "they", "t
 
 Return one standalone question that preserves the user's meaning. Do not answer the question. Do not add explanations, labels, or quotation marks. If the question is already standalone, return it unchanged.`
 
+const REWRITE_MAX_TOKENS = 96
+const REWRITE_TIMEOUT_MS = 30_000
+
 type HistoryMessage = Pick<MessageRow, 'role' | 'content'>
 
 export function buildRewriteMessages(
@@ -40,6 +43,9 @@ export async function rewriteQuestion(
   // conversation for it to refer to. Skipping Ollama also saves one model call.
   if (history.length === 0) return question
 
-  const rewritten = await chat(buildRewriteMessages(question, history))
+  const rewritten = await chat(buildRewriteMessages(question, history), {
+    maxTokens: REWRITE_MAX_TOKENS,
+    timeoutMs: REWRITE_TIMEOUT_MS,
+  })
   return rewritten.trim() || question
 }
