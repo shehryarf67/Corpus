@@ -12,7 +12,10 @@
     "test:reranker": "tsx --test test/reranker.model.test.ts",
     "test:stream": "tsx --test test/generation-stream.model.test.ts",
     "test:query-stream:e2e": "tsx --env-file=.env --test --test-concurrency=1 test/query-stream.e2e.test.ts",
-    "eval:retrieval": "tsx --env-file=.env eval/retrieval.ts"
+    "test:eval": "tsx --test eval/query-scoring.test.ts",
+    "eval:retrieval": "tsx --env-file=.env eval/retrieval.ts",
+    "eval:query": "tsx --env-file=.env eval/query.ts",
+    "eval:query-stream": "tsx --env-file=.env eval/query-stream.ts"
   },
   "keywords": [],
   "author": "",

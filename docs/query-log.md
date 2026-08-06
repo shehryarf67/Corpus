@@ -247,3 +247,23 @@ Added `test/query-stream.e2e.test.ts` and `npm run test:query-stream:e2e`. Unlik
 The test verifies that the response is SSE, conversation and generating status arrive first, more than one real token event is produced, finalizing status and done arrive last, no error event appears, and the final answer contains SST-2, MNLI, CoNLL-2003, and SQuAD. It also confirms that the done conversation ID matches the first event, the database contains exactly one user and one assistant message, and the saved assistant content equals the final done answer. The temporary conversation is deleted afterward.
 
 The real end-to-end streaming test passed 1/1 in about 122 seconds, and TypeScript passed. Backend streaming is now verified from request through persistence. The frontend stream reader remains intentionally deferred until frontend development begins.
+
+---
+
+## Full query quality evaluation harness
+
+Added `eval/query-dataset.ts` with direct factual, explanation, unanswerable, and multi-turn cases grounded in the actual stored PDF chunks. Expected answers use fact groups with acceptable wording alternatives rather than requiring one exact generated sentence. The dataset covers authors, compression directions, framework networks, subgroup bit widths, STE backpropagation, evaluation tasks, group-count performance, knowledge distillation, two unanswerable questions, and two multi-turn conversations.
+
+Added deterministic scoring in `eval/query-scoring.ts` for fact coverage, refusal detection, and canonical citation presence. Added scoring tests, which passed 3/3. Added `eval/query.ts` and `npm run eval:query` to run real conversation queries, score each turn, report aggregate correctness, citation, expected-page citation, refusal, follow-up, and latency metrics, and delete each evaluation conversation afterward. `EVAL_CASE_ID` runs one named case and `EVAL_CASE_LIMIT` runs a short prefix. The runner prints progress per case and cleans its exact active conversation when interrupted with Ctrl+C.
+
+Added `eval/query-stream.ts` and `npm run eval:query-stream` for first-response, first-event, first-token, total-duration, token-count, and answer fact-coverage measurements over the real SSE route. The representative evaluation-tasks run produced the first event at 1366 ms, first token at 2943 ms, 31 token events, completion at 8479 ms, and fact coverage 1.000.
+
+The non-streaming evaluation-tasks smoke case also passed with fact coverage 1.000 and the correct four tasks. It took 99733 ms and again produced no citation, so citation presence and expected-page citation were both 0.000. Metrics with no applicable cases now display `-` instead of incorrectly looking like a zero score.
+
+### Flaws exposed by the evaluation
+
+The full baseline reached the multi-turn tasks case but one unrestricted Ollama call continued at 100% CPU for far beyond normal generation time. The run was interrupted and its exact orphaned evaluation conversation was deleted. This exposed that `chat()` and `chatStream()` currently set no maximum output-token count and no request timeout. A bad rewrite or answer can therefore consume CPU indefinitely. This is a production-code issue to fix collaboratively; no automatic production fix was kept.
+
+The evaluation also confirmed the existing citation-compliance weakness: answers can be factually complete while Ollama omits citation labels, causing the validated sources array and citation metrics to remain empty. The quality harness now measures this explicitly instead of hiding it.
+
+TypeScript passed after the evaluation-only changes. The scoring tests passed 3/3. Production generation, rewriting, query, and route behavior were not changed as part of this evaluation work.
