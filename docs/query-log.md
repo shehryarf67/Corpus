@@ -229,3 +229,13 @@ The service keeps a `rawAnswer` string while forwarding each `chatStream()` text
 No `finalizeQuery()` helper was introduced. The existing non-streaming `chat()` path and its handling remain in `queryConversation()`, while the streaming path performs its own validation and persistence. Streaming errors deliberately propagate from the service for the future SSE route to catch. A mid-stream failure therefore produces no done event and stores no partial assistant answer.
 
 Added focused Postgres tests for normal event ordering and persistence, the no-source shortcut, and mid-stream error propagation. All streaming-service tests passed 3/3, TypeScript passed, and the complete unit suite passed 43/43. Docker Desktop had to be started because Postgres was initially unavailable. No HTTP or SSE route was created.
+
+### SSE query route
+
+Added `POST /query/stream` to the existing query route. The original `POST /query` endpoint remains unchanged. The streaming route accepts the same `documentId`, `question`, and optional `conversationId`, performs the same validation, and calls `prepareQuery()` before opening SSE. This preserves normal HTTP 400, 404, and 500 responses for validation or preparation failures.
+
+After preparation succeeds, Hono's `streamSSE()` opens a `text/event-stream` response. The route consumes `streamPreparedQuery()` and translates each typed service event into SSE by using its `type` as the SSE event name and JSON-stringifying the remaining fields as data. The resulting protocol includes conversation, status, token, and done events.
+
+Errors thrown after SSE starts are caught inside the stream callback because the HTTP status can no longer be changed. The route logs the internal error and sends a safe `error` event with `{"message":"Query stream failed"}`. It does not expose Ollama or database details to the client. The streaming service remains responsible for avoiding partial assistant persistence.
+
+Added a real Hono route integration test using Postgres and a controlled Ollama NDJSON stream. It verified the SSE content type, exact success event order, event data, citation-preserved final answer, conversation ID, and stored user/assistant messages. It also verified that a simulated Ollama failure produces conversation, status, and error events and stores only the user message. The route test passed and TypeScript passed.
