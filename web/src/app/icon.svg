@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+  <!-- Same mark as components/corpus-mark.tsx, redrawn for small sizes: heavier
+       lines and a 2px border so it still reads at 16x16 in a browser tab.
+       Every y/height is even, so at 16px each line lands on whole pixels and
+       renders crisp instead of blurring across a half-pixel boundary.
+       Colours are hard-coded because a favicon renders outside the page and
+       can't resolve the theme's CSS variables. -->
+  <rect x="1" y="1" width="30" height="30" rx="7" fill="#0F1217" stroke="#5C6573" stroke-width="2"/>
+  <rect x="8" y="8" width="16" height="4" rx="2" fill="#8C95A3"/>
+  <rect x="8" y="14" width="16" height="4" rx="2" fill="#E0A244"/>
+  <rect x="8" y="20" width="10" height="4" rx="2" fill="#8C95A3"/>
+</svg>
