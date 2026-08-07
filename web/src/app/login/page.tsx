@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AnnotatedDocument } from "@/components/annotated-document";
 import { Wordmark } from "@/components/wordmark";
 import { AuthForm } from "./auth-form";
 
@@ -16,8 +17,8 @@ export default function LoginPage() {
         </p>
       </div>
 
-      <div className="flex items-center px-[clamp(24px,7vw,110px)] py-12">
-        <div className="w-full max-w-[480px]">
+      <div className="flex items-center justify-between gap-[clamp(32px,5vw,80px)] px-[clamp(24px,7vw,110px)] py-12">
+        <div className="w-full max-w-[480px] shrink-0">
           <div className="mb-[34px]">
             <Wordmark />
             <h1 className="mt-5 font-serif text-[46px] leading-[1.02] font-semibold tracking-[-0.025em]">
@@ -44,6 +45,10 @@ export default function LoginPage() {
 
           <AuthForm />
         </div>
+
+        {/* Needs ~400px of its own before it stops crowding the form, so it
+            only appears once there's genuinely room for it. */}
+        <AnnotatedDocument className="hidden w-full max-w-[400px] xl:block" />
       </div>
     </div>
   );

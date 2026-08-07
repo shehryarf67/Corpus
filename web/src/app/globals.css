@@ -49,3 +49,149 @@ body {
   outline-offset: 2px;
   border-radius: 2px;
 }
+
+/* ────────────────────────────────────────────────────────────
+   Auth hero illustration (components/annotated-document.tsx)
+
+   One 8s timeline shared by every layer, sequenced purely by keyframe
+   percentages, so the stages stay in step without any JS:
+
+     08–26%  highlighter sweeps across the passage
+     08–20%  margin rule fades in alongside it
+     30–50%  connector draws out toward the citation
+     48–62%  citation chip settles in
+     86–96%  everything fades, then the loop restarts
+   ──────────────────────────────────────────────────────────── */
+
+.doc-float {
+  animation: doc-float 8s ease-in-out infinite;
+}
+
+.doc-sweep {
+  /* fill-box so scaleX pivots on the rect itself, not the SVG viewBox */
+  transform-box: fill-box;
+  transform-origin: left center;
+  /* Same easing the live passage highlight uses in the prototype. */
+  animation: doc-sweep 8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.doc-rule {
+  animation: doc-rule 8s ease-out infinite;
+}
+
+.doc-connector {
+  stroke-dasharray: 1;
+  animation: doc-connector 8s ease-in-out infinite;
+}
+
+.doc-chip {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: doc-chip 8s ease-out infinite;
+}
+
+@keyframes doc-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-0.4deg);
+  }
+  50% {
+    transform: translateY(-12px) rotate(0.4deg);
+  }
+}
+
+@keyframes doc-sweep {
+  0%,
+  8% {
+    opacity: 1;
+    transform: scaleX(0);
+  }
+  26%,
+  86% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+  96%,
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes doc-rule {
+  0%,
+  8% {
+    opacity: 0;
+  }
+  20%,
+  86% {
+    opacity: 1;
+  }
+  96%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes doc-connector {
+  0%,
+  30% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  32% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  50%,
+  86% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  96%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes doc-chip {
+  0%,
+  48% {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  62%,
+  86% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  96%,
+  100% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+}
+
+/* Skip the motion but keep the finished composition, so the illustration
+   still tells the story for anyone who asked for less movement. */
+@media (prefers-reduced-motion: reduce) {
+  .doc-float,
+  .doc-sweep,
+  .doc-rule,
+  .doc-connector,
+  .doc-chip {
+    animation: none;
+  }
+  .doc-sweep {
+    transform: scaleX(1);
+  }
+  .doc-rule,
+  .doc-chip {
+    opacity: 1;
+  }
+  .doc-connector {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
