@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { TopBar } from "@/components/top-bar";
+import { formatRelativeTime } from "@/lib/format";
 import {
   MOCK_DOCUMENTS,
   type DocumentStatus,
@@ -32,27 +33,67 @@ function statusLine(document: MockDocument) {
   return `indexed · ${document.chunkCount.toLocaleString("en-US")} chunks · ${document.pageCount} pages`;
 }
 
+/**
+ * Right-hand column: how much this document has actually been used. It's the
+ * signal that tells a library apart from a file listing — which of these have
+ * you worked with, and which have you never opened.
+ */
+function ActivityColumn({ document }: { document: MockDocument }) {
+  // Only a ready document can have been asked anything, so for the others
+  // there's no activity to report — just when it arrived.
+  if (document.status !== "ready") {
+    return (
+      <div className="shrink-0 text-right font-mono text-[10.5px] text-graphite-dim">
+        added {document.uploadedAt}
+      </div>
+    );
+  }
+
+  const hasBeenAsked = document.questionCount > 0;
+
+  return (
+    <div className="shrink-0 text-right font-mono text-[10.5px]">
+      <div className={hasBeenAsked ? "text-graphite" : "text-graphite-dim"}>
+        {hasBeenAsked
+          ? `${document.questionCount} ${document.questionCount === 1 ? "question" : "questions"}`
+          : "no questions yet"}
+      </div>
+      <div className="mt-1 text-graphite-dim">
+        {hasBeenAsked && document.lastAskedAt
+          ? `last asked ${formatRelativeTime(document.lastAskedAt)}`
+          : `added ${document.uploadedAt}`}
+      </div>
+    </div>
+  );
+}
+
 function DocumentRow({ document }: { document: MockDocument }) {
   const isReady = document.status === "ready";
 
   const body = (
     <>
-      <StatusDot status={document.status} />
-      <div className="min-w-0">
-        <div className="truncate font-mono text-[12.5px] text-read">
+      {/* Nudged down to sit level with the title's optical centre. */}
+      <span className="mt-[9px]">
+        <StatusDot status={document.status} />
+      </span>
+      <div className="min-w-0 flex-1">
+        {/* The title is the document's real identity; serif matches how the
+            same title is set on the page itself in the workspace. */}
+        <div className="truncate font-serif text-[15.5px] leading-[1.35] font-medium text-bone">
+          {document.title}
+        </div>
+        <div className="mt-[3px] truncate font-mono text-[10.5px] text-graphite-dim">
           {document.filename}
         </div>
-        <div className="mt-1 truncate font-mono text-[10.5px] text-graphite-dim">
+        <div className="mt-[5px] truncate font-mono text-[10.5px] text-graphite-dim">
           {statusLine(document)}
         </div>
       </div>
-      <time className="ml-auto shrink-0 self-center font-mono text-[10.5px] text-graphite-dim">
-        {document.uploadedAt}
-      </time>
+      <ActivityColumn document={document} />
     </>
   );
 
-  const shared = "flex w-full items-start gap-3 px-4 py-3.5 text-left";
+  const shared = "flex w-full items-start gap-3 px-4 py-4 text-left";
 
   // Only a finished document can be opened — until ingestion lands there are
   // no chunks to retrieve against, so the row deliberately isn't a link.

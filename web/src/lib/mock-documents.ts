@@ -7,6 +7,10 @@
  *   - status                              → `jobs.status`, since ingestion
  *                                           runs asynchronously in worker.ts
  *   - chunkCount                          → count of rows in `chunks`
+ *   - questionCount / lastAskedAt         → `messages` where role='user',
+ *                                           joined through `conversations`
+ *                                           (Conversations.getByDocumentId
+ *                                           and Messages already exist)
  *
  * `status` matters for the UI, not just bookkeeping: a document isn't
  * chattable until its ingestion job reaches `done`, so rows that are still
@@ -22,9 +26,17 @@ export type MockDocument = {
   chunkCount: number;
   pageCount: number;
   uploadedAt: string;
+  /** How many questions have been asked of this document. */
+  questionCount: number;
+  /** ISO timestamp of the most recent question, or null if never asked. */
+  lastAskedAt: string | null;
 };
 
-/** One of each status, so every row treatment is visible while designing. */
+/**
+ * One of each status, so every row treatment is visible while designing —
+ * including a ready document nobody has asked anything yet, since that's the
+ * state right after indexing finishes.
+ */
 export const MOCK_DOCUMENTS: MockDocument[] = [
   {
     id: "joint-pruning-quantization",
@@ -34,6 +46,8 @@ export const MOCK_DOCUMENTS: MockDocument[] = [
     chunkCount: 2341,
     pageCount: 4,
     uploadedAt: "2026-08-02",
+    questionCount: 6,
+    lastAskedAt: "2026-08-07T08:30:00Z",
   },
   {
     id: "mixed-precision-bert",
@@ -43,6 +57,19 @@ export const MOCK_DOCUMENTS: MockDocument[] = [
     chunkCount: 1876,
     pageCount: 9,
     uploadedAt: "2026-07-28",
+    questionCount: 12,
+    lastAskedAt: "2026-08-05T14:10:00Z",
+  },
+  {
+    id: "hybrid-retrieval-notes",
+    title: "Notes on Hybrid Retrieval and Reciprocal Rank Fusion",
+    filename: "hybrid-retrieval-notes.pdf",
+    status: "ready",
+    chunkCount: 512,
+    pageCount: 3,
+    uploadedAt: "2026-08-06",
+    questionCount: 0,
+    lastAskedAt: null,
   },
   {
     id: "sparse-attention-survey",
@@ -52,6 +79,8 @@ export const MOCK_DOCUMENTS: MockDocument[] = [
     chunkCount: 0,
     pageCount: 22,
     uploadedAt: "2026-08-07",
+    questionCount: 0,
+    lastAskedAt: null,
   },
   {
     id: "scanned-notes",
@@ -61,6 +90,8 @@ export const MOCK_DOCUMENTS: MockDocument[] = [
     chunkCount: 0,
     pageCount: 0,
     uploadedAt: "2026-08-05",
+    questionCount: 0,
+    lastAskedAt: null,
   },
 ];
 
