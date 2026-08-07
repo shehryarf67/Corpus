@@ -30,6 +30,11 @@ export type MockDocument = {
   questionCount: number;
   /** ISO timestamp of the most recent question, or null if never asked. */
   lastAskedAt: string | null;
+  /**
+   * Why ingestion failed — `jobs.error`, already recorded by the worker.
+   * Null unless status is "failed".
+   */
+  error: string | null;
 };
 
 /**
@@ -48,6 +53,7 @@ export const MOCK_DOCUMENTS: MockDocument[] = [
     uploadedAt: "2026-08-02",
     questionCount: 6,
     lastAskedAt: "2026-08-07T08:30:00Z",
+    error: null,
   },
   {
     id: "mixed-precision-bert",
@@ -59,6 +65,7 @@ export const MOCK_DOCUMENTS: MockDocument[] = [
     uploadedAt: "2026-07-28",
     questionCount: 12,
     lastAskedAt: "2026-08-05T14:10:00Z",
+    error: null,
   },
   {
     id: "hybrid-retrieval-notes",
@@ -70,6 +77,7 @@ export const MOCK_DOCUMENTS: MockDocument[] = [
     uploadedAt: "2026-08-06",
     questionCount: 0,
     lastAskedAt: null,
+    error: null,
   },
   {
     id: "sparse-attention-survey",
@@ -81,6 +89,7 @@ export const MOCK_DOCUMENTS: MockDocument[] = [
     uploadedAt: "2026-08-07",
     questionCount: 0,
     lastAskedAt: null,
+    error: null,
   },
   {
     id: "scanned-notes",
@@ -92,6 +101,9 @@ export const MOCK_DOCUMENTS: MockDocument[] = [
     uploadedAt: "2026-08-05",
     questionCount: 0,
     lastAskedAt: null,
+    // Realistic for this pipeline: extract.ts finds no upright text runs in a
+    // scanned PDF, so there's nothing to chunk. OCR is on the roadmap.
+    error: "no extractable text — this looks like a scan",
   },
 ];
 

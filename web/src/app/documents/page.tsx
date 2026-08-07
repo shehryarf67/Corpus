@@ -39,6 +39,26 @@ function statusLine(document: MockDocument) {
  * you worked with, and which have you never opened.
  */
 function ActivityColumn({ document }: { document: MockDocument }) {
+  // A failure is the one row state with something to *do*, so this slot
+  // carries the action rather than a date. Safe to use a real <button> here
+  // because failed rows aren't wrapped in a Link — a button inside an anchor
+  // would be invalid markup.
+  if (document.status === "failed") {
+    return (
+      <div className="flex shrink-0 flex-col items-end gap-2">
+        <span className="font-mono text-[10.5px] text-graphite-dim">
+          added {document.uploadedAt}
+        </span>
+        <button
+          type="button"
+          className="cursor-pointer rounded-[3px] border border-rule-strong px-2.5 py-1 font-mono text-[10.5px] text-graphite transition-colors hover:border-marker-line hover:text-bone"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   // Only a ready document can have been asked anything, so for the others
   // there's no activity to report — just when it arrived.
   if (document.status !== "ready") {
@@ -85,9 +105,18 @@ function DocumentRow({ document }: { document: MockDocument }) {
         <div className="mt-[3px] truncate font-mono text-[10.5px] text-graphite-dim">
           {document.filename}
         </div>
-        <div className="mt-[5px] truncate font-mono text-[10.5px] text-graphite-dim">
-          {statusLine(document)}
-        </div>
+        {/* A failure carries a reason, and it's allowed to wrap rather than
+            truncate — the whole point is that it's readable. Brighter than
+            the usual meta line too, since it's asking for attention. */}
+        {document.status === "failed" && document.error ? (
+          <div className="mt-[5px] font-mono text-[10.5px] text-graphite">
+            couldn&rsquo;t be indexed — {document.error}
+          </div>
+        ) : (
+          <div className="mt-[5px] truncate font-mono text-[10.5px] text-graphite-dim">
+            {statusLine(document)}
+          </div>
+        )}
       </div>
       <ActivityColumn document={document} />
     </>
@@ -96,11 +125,17 @@ function DocumentRow({ document }: { document: MockDocument }) {
   const shared = "flex w-full items-start gap-3 px-4 py-4 text-left";
 
   // Only a finished document can be opened — until ingestion lands there are
-  // no chunks to retrieve against, so the row deliberately isn't a link.
+  // no chunks to retrieve against, so neither of these is a link.
+  //
+  // Indexing is dimmed because it's transient and there's nothing to act on.
+  // A failure deliberately is NOT dimmed: it needs attention and carries a
+  // Retry, and fading it out would bury exactly the row you should look at.
   if (!isReady) {
+    const stateClass =
+      document.status === "indexing" ? "cursor-not-allowed opacity-60" : "";
     return (
       <li className="border-b border-rule last:border-b-0">
-        <div className={`${shared} cursor-not-allowed opacity-60`}>{body}</div>
+        <div className={`${shared} ${stateClass}`}>{body}</div>
       </li>
     );
   }
@@ -160,6 +195,13 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
   const { state } = await props.searchParams;
   const documents = state === "empty" ? [] : MOCK_DOCUMENTS;
 
+  // Only ready documents contribute passages, so this counts what's actually
+  // searchable rather than what's been uploaded.
+  const indexedPassages = documents.reduce(
+    (total, document) => total + document.chunkCount,
+    0,
+  );
+
   return (
     <div className="flex min-h-[100dvh] flex-col">
       <TopBar />
@@ -176,6 +218,11 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
               <h1 className="mt-2 font-serif text-[30px] leading-[1.1] font-semibold tracking-[-0.02em]">
                 Documents
               </h1>
+              <p className="mt-2 font-mono text-[10.5px] text-graphite-dim">
+                {documents.length}{" "}
+                {documents.length === 1 ? "document" : "documents"} ·{" "}
+                {indexedPassages.toLocaleString("en-US")} passages indexed
+              </p>
             </div>
             {/* Anchored in the header so it stays put as the list grows. */}
             <UploadButton />
