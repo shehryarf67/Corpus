@@ -53,60 +53,64 @@ body {
 /* ────────────────────────────────────────────────────────────
    Auth hero illustration (components/annotated-document.tsx)
 
-   One 10s timeline shared by every layer, sequenced purely by keyframe
-   percentages, so the stages stay in step without any JS:
+   The annotation sequence and the page flips are driven from JS with the
+   Web Animations API — see that component for the timeline. CSS only
+   provides three things here:
 
-     00–12%  the page flips once on the Y-axis
-     14–32%  highlighter sweeps across the passage
-     14–26%  margin rule fades in alongside it
-     36–56%  connector draws out toward the citation
-     54–68%  citation chip settles in
-     86–96%  everything fades, then the loop restarts
-
-   The drift, the flip, and the fade-out live on three separate elements —
-   two CSS animations can't both drive `transform` on one node, the later
-   one simply wins, so each independent motion needs its own layer:
-   .doc-perspective (static, gives the flip somewhere to have depth)
-     > .doc-float (drift + tilt)
-       > .doc-flip (the Y-axis rotation)
-         > svg (the sweep/rule/connector/chip fade independently inside it)
+     1. the 3D context the flips need,
+     2. the ambient drift, which has no coordination requirement and so
+        stays a plain independent loop,
+     3. the resting state each animated layer starts from (un-annotated),
+        which is also what renders for the frame before hydration.
    ──────────────────────────────────────────────────────────── */
 
-.doc-perspective {
-  perspective: 1000px;
+/* Around 90° the page is edge-on and its near edge sits close to the camera
+   plane, where perspective projects geometry out to extreme coordinates. The
+   browser grows the scrollable area to match, which briefly pushed scrollbars
+   onto the page. Clip that excursion here.
+
+   The padding/negative-margin pair is what keeps this from cutting anything
+   real: it buys 100px of clip headroom on every side while leaving the
+   element's layout box exactly where it was, so the page's soft drop shadow
+   (which reaches ~90px) still renders in full. */
+.doc-clip {
+  padding: 100px;
+  margin: -100px;
+  overflow: hidden;
+  /* Purely decorative, and it now overhangs its column — never let it
+     swallow a click meant for the form. */
+  pointer-events: none;
 }
 
+/* The drift is the OUTER layer and the perspective sits inside it, which
+   matters more than it looks: `perspective-origin` is fixed to this element's
+   own box, so if the drift were applied above it, the document would slide
+   up to 12px away from its own vanishing point and the spin would visibly
+   orbit rather than turn about its centre. Nesting it this way means the
+   vanishing point travels with the page. */
 .doc-float {
   animation: doc-float 10s ease-in-out infinite;
 }
 
-.doc-flip {
+/* Both origins deliberately sit left of centre.
+
+   The SVG viewBox is 420 wide but the page itself only occupies x=20–300;
+   the extra width on the right is empty space reserved for the citation
+   chip, which hasn't appeared yet while the flip is running. So the page's
+   own centre is x=160, a full 50 units left of the element's centre (210).
+   Spinning about the element centre swings the page around a point off to
+   its right, which reads as orbiting rather than turning in place.
+
+   160/420 = 38.1%. Keep this in sync with the page rect in
+   annotated-document.tsx if that geometry ever changes. */
+.doc-perspective {
+  perspective: 1000px;
+  perspective-origin: 38.1% 50%;
+}
+
+.doc-flip-layer {
   transform-style: preserve-3d;
-  backface-visibility: hidden;
-  animation: doc-flip 10s cubic-bezier(0.4, 0.1, 0.2, 1) infinite;
-}
-
-.doc-sweep {
-  /* fill-box so scaleX pivots on the rect itself, not the SVG viewBox */
-  transform-box: fill-box;
-  transform-origin: left center;
-  /* Same easing the live passage highlight uses in the prototype. */
-  animation: doc-sweep 10s cubic-bezier(0.22, 1, 0.36, 1) infinite;
-}
-
-.doc-rule {
-  animation: doc-rule 10s ease-out infinite;
-}
-
-.doc-connector {
-  stroke-dasharray: 1;
-  animation: doc-connector 10s ease-in-out infinite;
-}
-
-.doc-chip {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: doc-chip 10s ease-out infinite;
+  transform-origin: 38.1% 50%;
 }
 
 @keyframes doc-float {
@@ -119,102 +123,35 @@ body {
   }
 }
 
-/* Ends at 360deg, not back at 0deg — 360deg renders identically to 0deg,
-   so the jump back to the next cycle's 0% keyframe is invisible. That's
-   what makes "flip once, then stay flat" loop cleanly instead of visibly
-   snapping or having to spin backward. */
-@keyframes doc-flip {
-  0% {
-    transform: rotateY(0deg);
-  }
-  12%,
-  100% {
-    transform: rotateY(360deg);
-  }
+/* Resting (un-annotated) state. JS animates away from these. */
+.doc-sweep {
+  /* fill-box so scaleX pivots on the rect itself, not the SVG viewBox */
+  transform-box: fill-box;
+  transform-origin: left center;
+  transform: scaleX(0);
 }
 
-@keyframes doc-sweep {
-  0%,
-  14% {
-    opacity: 1;
-    transform: scaleX(0);
-  }
-  32%,
-  86% {
-    opacity: 1;
-    transform: scaleX(1);
-  }
-  96%,
-  100% {
-    opacity: 0;
-    transform: scaleX(1);
-  }
+.doc-rule {
+  opacity: 0;
 }
 
-@keyframes doc-rule {
-  0%,
-  14% {
-    opacity: 0;
-  }
-  26%,
-  86% {
-    opacity: 1;
-  }
-  96%,
-  100% {
-    opacity: 0;
-  }
+.doc-connector {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
 }
 
-@keyframes doc-connector {
-  0%,
-  36% {
-    stroke-dashoffset: 1;
-    opacity: 0;
-  }
-  38% {
-    stroke-dashoffset: 1;
-    opacity: 1;
-  }
-  56%,
-  86% {
-    stroke-dashoffset: 0;
-    opacity: 1;
-  }
-  96%,
-  100% {
-    stroke-dashoffset: 0;
-    opacity: 0;
-  }
+.doc-chip {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
 }
 
-@keyframes doc-chip {
-  0%,
-  54% {
-    opacity: 0;
-    transform: translateY(5px);
-  }
-  68%,
-  86% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  96%,
-  100% {
-    opacity: 0;
-    transform: translateY(0);
-  }
-}
-
-/* Skip the motion but keep the finished composition, so the illustration
-   still tells the story for anyone who asked for less movement. */
+/* No JS animations run in this case (the component bails out early), so
+   show the finished composition — the illustration still tells its story
+   without any movement. */
 @media (prefers-reduced-motion: reduce) {
-  .doc-float,
-  .doc-flip,
-  .doc-sweep,
-  .doc-rule,
-  .doc-connector,
-  .doc-chip {
+  .doc-float {
     animation: none;
   }
   .doc-sweep {
