@@ -166,3 +166,42 @@ body {
     opacity: 1;
   }
 }
+
+/* ────────────────────────────────────────────────────────────
+   Inline citation inside an answer (from the prototype): a
+   highlighter wash sitting under the text plus a mono chunk key.
+   Kept as a class because the layered background trick is far
+   clearer here than as a pile of arbitrary utilities.
+   ──────────────────────────────────────────────────────────── */
+.cite {
+  background-image: linear-gradient(
+    var(--color-marker-soft),
+    var(--color-marker-soft)
+  );
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: 100% 62%;
+  border-bottom: 1px solid var(--color-marker-line);
+  padding: 0 1px;
+  color: var(--color-bone);
+  cursor: pointer;
+  transition:
+    background-size 0.18s,
+    color 0.18s;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.cite:hover {
+  background-size: 100% 100%;
+  color: #fff;
+}
+
+.cite sup {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--color-marker);
+  margin-left: 2px;
+  vertical-align: super;
+  line-height: 0;
+}

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 type Mode = "signin" | "signup";
@@ -89,12 +90,13 @@ export function AuthForm() {
           </button>
         </p>
 
-        <button
-          type="button"
+        {/* No auth yet, so this is just a way into the app while building. */}
+        <Link
+          href="/documents"
           className="cursor-pointer font-mono text-[11.5px] tracking-[0.06em] text-graphite-dim hover:text-graphite"
         >
           skip →
-        </button>
+        </Link>
       </div>
     </>
   );
