@@ -46,9 +46,9 @@ export default function LoginPage() {
           <AuthForm />
         </div>
 
-        {/* Needs ~400px of its own before it stops crowding the form, so it
+        {/* Needs ~500px of its own before it stops crowding the form, so it
             only appears once there's genuinely room for it. */}
-        <AnnotatedDocument className="hidden w-full max-w-[400px] xl:block" />
+        <AnnotatedDocument className="hidden w-full max-w-[500px] xl:block" />
       </div>
     </div>
   );

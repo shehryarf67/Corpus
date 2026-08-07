@@ -53,18 +53,37 @@ body {
 /* ────────────────────────────────────────────────────────────
    Auth hero illustration (components/annotated-document.tsx)
 
-   One 8s timeline shared by every layer, sequenced purely by keyframe
+   One 10s timeline shared by every layer, sequenced purely by keyframe
    percentages, so the stages stay in step without any JS:
 
-     08–26%  highlighter sweeps across the passage
-     08–20%  margin rule fades in alongside it
-     30–50%  connector draws out toward the citation
-     48–62%  citation chip settles in
+     00–12%  the page flips once on the Y-axis
+     14–32%  highlighter sweeps across the passage
+     14–26%  margin rule fades in alongside it
+     36–56%  connector draws out toward the citation
+     54–68%  citation chip settles in
      86–96%  everything fades, then the loop restarts
+
+   The drift, the flip, and the fade-out live on three separate elements —
+   two CSS animations can't both drive `transform` on one node, the later
+   one simply wins, so each independent motion needs its own layer:
+   .doc-perspective (static, gives the flip somewhere to have depth)
+     > .doc-float (drift + tilt)
+       > .doc-flip (the Y-axis rotation)
+         > svg (the sweep/rule/connector/chip fade independently inside it)
    ──────────────────────────────────────────────────────────── */
 
+.doc-perspective {
+  perspective: 1000px;
+}
+
 .doc-float {
-  animation: doc-float 8s ease-in-out infinite;
+  animation: doc-float 10s ease-in-out infinite;
+}
+
+.doc-flip {
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  animation: doc-flip 10s cubic-bezier(0.4, 0.1, 0.2, 1) infinite;
 }
 
 .doc-sweep {
@@ -72,22 +91,22 @@ body {
   transform-box: fill-box;
   transform-origin: left center;
   /* Same easing the live passage highlight uses in the prototype. */
-  animation: doc-sweep 8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  animation: doc-sweep 10s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
 .doc-rule {
-  animation: doc-rule 8s ease-out infinite;
+  animation: doc-rule 10s ease-out infinite;
 }
 
 .doc-connector {
   stroke-dasharray: 1;
-  animation: doc-connector 8s ease-in-out infinite;
+  animation: doc-connector 10s ease-in-out infinite;
 }
 
 .doc-chip {
   transform-box: fill-box;
   transform-origin: center;
-  animation: doc-chip 8s ease-out infinite;
+  animation: doc-chip 10s ease-out infinite;
 }
 
 @keyframes doc-float {
@@ -100,13 +119,27 @@ body {
   }
 }
 
+/* Ends at 360deg, not back at 0deg — 360deg renders identically to 0deg,
+   so the jump back to the next cycle's 0% keyframe is invisible. That's
+   what makes "flip once, then stay flat" loop cleanly instead of visibly
+   snapping or having to spin backward. */
+@keyframes doc-flip {
+  0% {
+    transform: rotateY(0deg);
+  }
+  12%,
+  100% {
+    transform: rotateY(360deg);
+  }
+}
+
 @keyframes doc-sweep {
   0%,
-  8% {
+  14% {
     opacity: 1;
     transform: scaleX(0);
   }
-  26%,
+  32%,
   86% {
     opacity: 1;
     transform: scaleX(1);
@@ -120,10 +153,10 @@ body {
 
 @keyframes doc-rule {
   0%,
-  8% {
+  14% {
     opacity: 0;
   }
-  20%,
+  26%,
   86% {
     opacity: 1;
   }
@@ -135,15 +168,15 @@ body {
 
 @keyframes doc-connector {
   0%,
-  30% {
+  36% {
     stroke-dashoffset: 1;
     opacity: 0;
   }
-  32% {
+  38% {
     stroke-dashoffset: 1;
     opacity: 1;
   }
-  50%,
+  56%,
   86% {
     stroke-dashoffset: 0;
     opacity: 1;
@@ -157,11 +190,11 @@ body {
 
 @keyframes doc-chip {
   0%,
-  48% {
+  54% {
     opacity: 0;
     transform: translateY(5px);
   }
-  62%,
+  68%,
   86% {
     opacity: 1;
     transform: translateY(0);
@@ -177,6 +210,7 @@ body {
    still tells the story for anyone who asked for less movement. */
 @media (prefers-reduced-motion: reduce) {
   .doc-float,
+  .doc-flip,
   .doc-sweep,
   .doc-rule,
   .doc-connector,
