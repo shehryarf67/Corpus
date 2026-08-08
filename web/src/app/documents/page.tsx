@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { PagePreview } from "@/components/page-preview";
 import { TopBar } from "@/components/top-bar";
 import { formatRelativeTime } from "@/lib/format";
 import {
@@ -34,118 +35,124 @@ function statusLine(document: MockDocument) {
 }
 
 /**
- * Right-hand column: how much this document has actually been used. It's the
- * signal that tells a library apart from a file listing — which of these have
- * you worked with, and which have you never opened.
+ * How much this document has actually been used — the signal that tells a
+ * library apart from a plain file listing.
  */
-function ActivityColumn({ document }: { document: MockDocument }) {
-  // A failure is the one row state with something to *do*, so this slot
-  // carries the action rather than a date. Safe to use a real <button> here
-  // because failed rows aren't wrapped in a Link — a button inside an anchor
-  // would be invalid markup.
-  if (document.status === "failed") {
-    return (
-      <div className="flex shrink-0 flex-col items-end gap-2">
-        <span className="font-mono text-[10.5px] text-graphite-dim">
-          added {document.uploadedAt}
-        </span>
-        <button
-          type="button"
-          className="cursor-pointer rounded-[3px] border border-rule-strong px-2.5 py-1 font-mono text-[10.5px] text-graphite transition-colors hover:border-marker-line hover:text-bone"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
+function activityLine(document: MockDocument): string {
+  if (document.status !== "ready") return `added ${document.uploadedAt}`;
 
-  // Only a ready document can have been asked anything, so for the others
-  // there's no activity to report — just when it arrived.
-  if (document.status !== "ready") {
-    return (
-      <div className="shrink-0 text-right font-mono text-[10.5px] text-graphite-dim">
-        added {document.uploadedAt}
-      </div>
-    );
-  }
+  if (document.questionCount === 0) return "no questions yet";
 
-  const hasBeenAsked = document.questionCount > 0;
+  const label = document.questionCount === 1 ? "question" : "questions";
+  const asked = document.lastAskedAt
+    ? ` · last asked ${formatRelativeTime(document.lastAskedAt)}`
+    : "";
+  return `${document.questionCount} ${label}${asked}`;
+}
+
+/**
+ * The thumbnail. Non-ready documents get a blank page plus a label, because
+ * there genuinely is no first page to show yet — faking one would imply the
+ * document had been read when it hasn't.
+ */
+function Thumbnail({ document }: { document: MockDocument }) {
+  const isReady = document.status === "ready";
 
   return (
-    <div className="shrink-0 text-right font-mono text-[10.5px]">
-      <div className={hasBeenAsked ? "text-graphite" : "text-graphite-dim"}>
-        {hasBeenAsked
-          ? `${document.questionCount} ${document.questionCount === 1 ? "question" : "questions"}`
-          : "no questions yet"}
-      </div>
-      <div className="mt-1 text-graphite-dim">
-        {hasBeenAsked && document.lastAskedAt
-          ? `last asked ${formatRelativeTime(document.lastAskedAt)}`
-          : `added ${document.uploadedAt}`}
-      </div>
+    <div className="relative overflow-hidden rounded-[2px] border border-rule shadow-[0_18px_40px_-28px_rgba(0,0,0,0.95)] transition-colors group-hover:border-rule-strong">
+      <PagePreview seed={document.id} variant={isReady ? "page" : "blank"} />
+
+      {!isReady && (
+        <div className="absolute inset-0 grid place-items-center">
+          <span className="font-mono text-[10.5px] tracking-[0.06em] text-graphite-dim">
+            {document.status === "indexing" ? "indexing…" : "no preview"}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
 
-function DocumentRow({ document }: { document: MockDocument }) {
+function CardDetails({ document }: { document: MockDocument }) {
+  const isFailed = document.status === "failed";
+
+  return (
+    <div className="mt-3.5">
+      {/* Reserves two lines so cards in a row stay the same height whether a
+          title wraps or not. */}
+      <h2 className="line-clamp-2 min-h-[42px] font-serif text-[15.5px] leading-[1.35] font-medium text-bone">
+        {document.title}
+      </h2>
+
+      <div className="mt-1 truncate font-mono text-[10.5px] text-graphite-dim">
+        {document.filename}
+      </div>
+
+      <div className="mt-2 flex items-start gap-2">
+        <span className="mt-[5px]">
+          <StatusDot status={document.status} />
+        </span>
+        {/* A failure's reason is allowed to wrap rather than truncate — being
+            readable is the whole point — and sits brighter than the usual meta
+            line because it's asking for attention. */}
+        {isFailed && document.error ? (
+          <span className="font-mono text-[10.5px] leading-[1.5] text-graphite">
+            couldn&rsquo;t be indexed — {document.error}
+          </span>
+        ) : (
+          <span className="truncate font-mono text-[10.5px] leading-[1.5] text-graphite-dim">
+            {statusLine(document)}
+          </span>
+        )}
+      </div>
+
+      <div className="mt-1.5 truncate font-mono text-[10.5px] text-graphite-dim">
+        {activityLine(document)}
+      </div>
+
+      {/* Safe as a real <button> because failed cards aren't wrapped in a
+          Link — a button inside an anchor would be invalid markup. */}
+      {isFailed && (
+        <button
+          type="button"
+          className="mt-3 cursor-pointer rounded-[3px] border border-rule-strong px-2.5 py-1 font-mono text-[10.5px] text-graphite transition-colors hover:border-marker-line hover:text-bone"
+        >
+          Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
+function DocumentCard({ document }: { document: MockDocument }) {
   const isReady = document.status === "ready";
 
   const body = (
     <>
-      {/* Nudged down to sit level with the title's optical centre. */}
-      <span className="mt-[9px]">
-        <StatusDot status={document.status} />
-      </span>
-      <div className="min-w-0 flex-1">
-        {/* The title is the document's real identity; serif matches how the
-            same title is set on the page itself in the workspace. */}
-        <div className="truncate font-serif text-[15.5px] leading-[1.35] font-medium text-bone">
-          {document.title}
-        </div>
-        <div className="mt-[3px] truncate font-mono text-[10.5px] text-graphite-dim">
-          {document.filename}
-        </div>
-        {/* A failure carries a reason, and it's allowed to wrap rather than
-            truncate — the whole point is that it's readable. Brighter than
-            the usual meta line too, since it's asking for attention. */}
-        {document.status === "failed" && document.error ? (
-          <div className="mt-[5px] font-mono text-[10.5px] text-graphite">
-            couldn&rsquo;t be indexed — {document.error}
-          </div>
-        ) : (
-          <div className="mt-[5px] truncate font-mono text-[10.5px] text-graphite-dim">
-            {statusLine(document)}
-          </div>
-        )}
-      </div>
-      <ActivityColumn document={document} />
+      <Thumbnail document={document} />
+      <CardDetails document={document} />
     </>
   );
-
-  const shared = "flex w-full items-start gap-3 px-4 py-4 text-left";
 
   // Only a finished document can be opened — until ingestion lands there are
   // no chunks to retrieve against, so neither of these is a link.
   //
   // Indexing is dimmed because it's transient and there's nothing to act on.
   // A failure deliberately is NOT dimmed: it needs attention and carries a
-  // Retry, and fading it out would bury exactly the row you should look at.
+  // Retry, and fading it out would bury exactly the card you should look at.
   if (!isReady) {
     const stateClass =
       document.status === "indexing" ? "cursor-not-allowed opacity-60" : "";
     return (
-      <li className="border-b border-rule last:border-b-0">
-        <div className={`${shared} ${stateClass}`}>{body}</div>
+      <li>
+        <div className={`group block ${stateClass}`}>{body}</div>
       </li>
     );
   }
 
   return (
-    <li className="border-b border-rule last:border-b-0">
-      <Link
-        href={`/documents/${document.id}`}
-        className={`${shared} transition-colors hover:bg-raise`}
-      >
+    <li>
+      <Link href={`/documents/${document.id}`} className="group block">
         {body}
       </Link>
     </li>
@@ -209,7 +216,7 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
       {documents.length === 0 ? (
         <EmptyState />
       ) : (
-        <main className="mx-auto w-full max-w-[880px] px-6 py-12">
+        <main className="mx-auto w-full max-w-[960px] px-6 py-12">
           <div className="mb-8 flex items-end justify-between gap-6">
             <div>
               <div className="font-mono text-[10.5px] tracking-[0.14em] text-graphite-dim uppercase">
@@ -228,9 +235,11 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
             <UploadButton />
           </div>
 
-          <ul className="overflow-hidden rounded-[3px] border border-rule bg-chrome">
+          {/* Three across at the widest: with a handful of documents that
+              leaves fewer orphaned cards on the last row than four would. */}
+          <ul className="grid grid-cols-1 gap-x-6 gap-y-9 sm:grid-cols-2 lg:grid-cols-3">
             {documents.map((document) => (
-              <DocumentRow key={document.id} document={document} />
+              <DocumentCard key={document.id} document={document} />
             ))}
           </ul>
         </main>
