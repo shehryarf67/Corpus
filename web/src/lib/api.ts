@@ -1,6 +1,24 @@
 import { cookies } from "next/headers";
 import { ApiError } from "./api-error";
 
+/**
+ * This type represents exactly what the backend returns from:
+ *
+ * GET /jobs/:jobId
+ *
+ * The frontend should match the backend response shape instead of inventing
+ * its own version of the data.
+ */
+export type JobResponse = {
+  jobId: string;
+  documentId: string;
+  type: string;
+  status: string;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export async function request<T>(
   path: string, // Only necessary route e.g /jobs/123
   options: RequestInit = {}, // Second arg for fetch options, e.g. method, headers, body
@@ -70,4 +88,9 @@ export async function request<T>(
   // The caller of this function is expected to know the structure of the 
   // response and provide the appropriate type for T.
   return (await response.json()) as T;
+}
+
+
+export function getJob(jobId: string): Promise<JobResponse> {
+  return request<JobResponse>(`/jobs/${jobId}`);
 }
