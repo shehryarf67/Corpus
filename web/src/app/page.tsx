@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/auth-api";
 
-// No landing page yet — the app starts at auth. Once there's a real
-// destination after sign-in (the workspace), this should redirect there
-// instead when a session already exists.
-export default function Home() {
-  redirect("/login");
+// Send each visitor to the correct side of the authentication boundary.
+export default async function Home() {
+  const user = await getCurrentUser();
+  redirect(user ? "/documents" : "/login");
 }

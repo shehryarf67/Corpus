@@ -1,9 +1,13 @@
 "use client";
 
-import Link from "next/link";
-import { useState } from "react";
+import { useActionState, useState } from "react";
+import {
+  loginAction,
+  signupAction,
+} from "./actions";
 
 type Mode = "signin" | "signup";
+type AuthActionState = { error: string | null };
 
 const fieldClass = "mb-[14px]";
 const labelClass =
@@ -14,30 +18,15 @@ const inputClass =
 export function AuthForm() {
   const [mode, setMode] = useState<Mode>("signin");
   const isSignup = mode === "signup";
+  const action = isSignup ? signupAction : loginAction;
+  const initialState: AuthActionState = { error: null };
+  const [state, formAction, pending] = useActionState(action, initialState);
 
   return (
     <>
-      <form
-        // No auth yet — this only stops the browser's default navigate-on-submit
-        // so the page doesn't reload with the fields in the query string.
-        onSubmit={(event) => event.preventDefault()}
-      >
-        {isSignup && (
-          <div className={fieldClass}>
-            <label className={labelClass} htmlFor="name">
-              Name
-            </label>
-            <input
-              id="name"
-              name="name"
-              type="text"
-              autoComplete="name"
-              placeholder="Shehryar"
-              className={inputClass}
-            />
-          </div>
-        )}
-
+      {/* Server Actions submit credentials without exposing the HttpOnly
+          session token to this client component. */}
+      <form action={formAction}>
         <div className={fieldClass}>
           <label className={labelClass} htmlFor="email">
             Email
@@ -48,6 +37,7 @@ export function AuthForm() {
             type="email"
             autoComplete="email"
             placeholder="you@corpus.dev"
+            required
             className={inputClass}
           />
         </div>
@@ -60,21 +50,26 @@ export function AuthForm() {
             id="password"
             name="password"
             type="password"
-            // Tells a password manager whether to offer a saved password or
-            // generate a new one.
             autoComplete={isSignup ? "new-password" : "current-password"}
             placeholder="••••••••"
+            minLength={8}
+            required
             className={inputClass}
           />
         </div>
 
+        {state.error && (
+          <p role="alert" className="mb-1 text-[12.5px] leading-[1.5] text-marker">
+            {state.error}
+          </p>
+        )}
+
         <button
           type="submit"
-          // #171004 is a near-black brown that sits on the amber fill — dark
-          // enough to stay readable without going flat black.
-          className="mt-2 w-full cursor-pointer rounded-[3px] bg-marker p-3 font-semibold tracking-[0.005em] text-[#171004] transition hover:brightness-[1.08] active:translate-y-px"
+          disabled={pending}
+          className="mt-2 w-full cursor-pointer rounded-[3px] bg-marker p-3 font-semibold tracking-[0.005em] text-[#171004] transition hover:brightness-[1.08] active:translate-y-px disabled:cursor-wait disabled:opacity-70"
         >
-          {isSignup ? "Create account" : "Sign in"}
+          {pending ? "Please wait..." : isSignup ? "Create account" : "Sign in"}
         </button>
       </form>
 
@@ -84,19 +79,12 @@ export function AuthForm() {
           <button
             type="button"
             onClick={() => setMode(isSignup ? "signin" : "signup")}
-            className="cursor-pointer text-bone underline decoration-marker-line underline-offset-[3px] hover:text-marker"
+            disabled={pending}
+            className="cursor-pointer text-bone underline decoration-marker-line underline-offset-[3px] hover:text-marker disabled:cursor-wait disabled:opacity-70"
           >
             {isSignup ? "Sign in" : "Create an account"}
           </button>
         </p>
-
-        {/* No auth yet, so this is just a way into the app while building. */}
-        <Link
-          href="/documents"
-          className="cursor-pointer font-mono text-[11.5px] tracking-[0.06em] text-graphite-dim hover:text-graphite"
-        >
-          skip →
-        </Link>
       </div>
     </>
   );

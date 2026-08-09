@@ -19,10 +19,10 @@ export type JobResponse = {
   updatedAt: string;
 };
 
-export async function request<T>(
+export async function requestRaw(
   path: string, // Only necessary route e.g /jobs/123
   options: RequestInit = {}, // Second arg for fetch options, e.g. method, headers, body
-): Promise<T> {
+): Promise<Response> {
     // Provide the whole URL to baseUrl, so that the fetch request can be made to the correct endpoint. 
     // The base URL is expected to be set in the environment variable API_BASE_URL. 
     // If it's not set, an error is thrown to indicate that the configuration is missing.
@@ -84,9 +84,16 @@ export async function request<T>(
     throw new ApiError(response.status, message);
   }
 
-  // If response successful, return the parsed JSON data as type T. 
-  // The caller of this function is expected to know the structure of the 
-  // response and provide the appropriate type for T.
+  return response;
+}
+
+export async function request<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const response = await requestRaw(path, options);
+
+  // The caller supplies T because it knows the response shape for this route.
   return (await response.json()) as T;
 }
 

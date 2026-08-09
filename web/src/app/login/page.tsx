@@ -1,13 +1,18 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { AnnotatedDocument } from "@/components/annotated-document";
 import { Wordmark } from "@/components/wordmark";
+import { getCurrentUser } from "@/lib/auth-api";
 import { AuthForm } from "./auth-form";
 
 export const metadata: Metadata = {
   title: "Sign in · Corpus",
 };
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  const user = await getCurrentUser();
+  if (user) redirect("/documents");
+
   return (
     <div className="grid min-h-[100dvh] grid-cols-[56px_1fr]">
       {/* Vertical spine, like the stamp down the edge of a bound paper. */}
