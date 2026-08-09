@@ -1,10 +1,177 @@
 import { Pool } from 'pg'
 import { formatEmbeddingForPgvector } from './vector.js'
 
+// A pool reuses a small set of Postgres connections instead of opening a new
+// connection for every query. Repositories below share this one pool.
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL })
 
-export const User = {
+// Row types mirror PostgreSQL exactly, so database fields stay snake_case.
+// They describe data returned by pg; they do not perform auth or hashing.
+export type UserRow = {
+  id: string
+  email: string
+  password_hash: string
+  created_at: string
+}
 
+export type SessionRow = {
+  id: string
+  user_id: string
+  token_hash: string
+  expires_at: string
+  created_at: string
+}
+
+// Future auth middleware usually needs both records at once. Keeping them
+// nested makes session.id and user.id unambiguous for callers.
+export type AuthenticatedSessionRow = {
+  session: SessionRow
+  user: UserRow
+}
+
+// SQL JOIN results are flat. This private type represents the aliased columns
+// before we reshape them into AuthenticatedSessionRow below.
+type AuthenticatedSessionJoinRow = {
+  session_id: string
+  session_user_id: string
+  session_token_hash: string
+  session_expires_at: string
+  session_created_at: string
+  user_id: string
+  user_email: string
+  user_password_hash: string
+  user_created_at: string
+}
+
+// Repositories group database operations for one table under one clear name.
+export const Users = {
+  async create(email: string, passwordHash: string) {
+    // Hashing happens before this helper. RETURNING gives us the inserted row
+    // without needing a second SELECT.
+    const { rows } = await pool.query<UserRow>(
+      `INSERT INTO users (email, password_hash)
+       VALUES ($1, $2)
+       RETURNING *`,
+      [email, passwordHash]
+    )
+    return rows[0]
+  },
+
+  async getById(id: string) {
+    // `?? null` gives callers one predictable not-found value instead of
+    // leaking the undefined value produced by rows[0].
+    const { rows } = await pool.query<UserRow>(
+      'SELECT * FROM users WHERE id = $1',
+      [id]
+    )
+    return rows[0] ?? null
+  },
+
+  async getByEmail(email: string) {
+    // The database compares both sides in lowercase, matching the table's
+    // case-insensitive unique email index. We preserve the stored value.
+    const { rows } = await pool.query<UserRow>(
+      'SELECT * FROM users WHERE LOWER(email) = LOWER($1)',
+      [email]
+    )
+    return rows[0] ?? null
+  },
+}
+
+export const Sessions = {
+  async create(userId: string, tokenHash: string, expiresAt: Date) {
+    // Only the token hash is persisted. Raw session tokens stay outside db.ts.
+    const { rows } = await pool.query<SessionRow>(
+      `INSERT INTO sessions (user_id, token_hash, expires_at)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [userId, tokenHash, expiresAt]
+    )
+    return rows[0]
+  },
+
+  async getByTokenHash(tokenHash: string) {
+    // Expired rows may remain until cleanup, but they must never authenticate.
+    const { rows } = await pool.query<SessionRow>(
+      `SELECT *
+       FROM sessions
+       WHERE token_hash = $1
+         AND expires_at > NOW()`,
+      [tokenHash]
+    )
+    return rows[0] ?? null
+  },
+
+  async getWithUserByTokenHash(
+    tokenHash: string
+  ): Promise<AuthenticatedSessionRow | null> {
+    // Middleware needs the active session and its user together. One JOIN
+    // avoids a second database round trip, and aliases prevent duplicate
+    // id/created_at fields from overwriting or obscuring each other.
+    const { rows } = await pool.query<AuthenticatedSessionJoinRow>(
+      `SELECT
+         sessions.id AS session_id,
+         sessions.user_id AS session_user_id,
+         sessions.token_hash AS session_token_hash,
+         sessions.expires_at AS session_expires_at,
+         sessions.created_at AS session_created_at,
+         users.id AS user_id,
+         users.email AS user_email,
+         users.password_hash AS user_password_hash,
+         users.created_at AS user_created_at
+       FROM sessions
+       INNER JOIN users ON users.id = sessions.user_id
+       WHERE sessions.token_hash = $1
+         AND sessions.expires_at > NOW()`,
+      [tokenHash]
+    )
+    const row = rows[0]
+    if (!row) return null
+
+    // Convert the flat, explicitly aliased JOIN row into a structure that is
+    // straightforward for future authentication middleware to consume.
+    return {
+      session: {
+        id: row.session_id,
+        user_id: row.session_user_id,
+        token_hash: row.session_token_hash,
+        expires_at: row.session_expires_at,
+        created_at: row.session_created_at,
+      },
+      user: {
+        id: row.user_id,
+        email: row.user_email,
+        password_hash: row.user_password_hash,
+        created_at: row.user_created_at,
+      },
+    }
+  },
+
+  async deleteByTokenHash(tokenHash: string): Promise<number> {
+    // DELETE is safe when no row matches; rowCount is simply zero.
+    const result = await pool.query(
+      'DELETE FROM sessions WHERE token_hash = $1',
+      [tokenHash]
+    )
+    return result.rowCount ?? 0
+  },
+
+  async deleteExpired(): Promise<number> {
+    // NOW() uses the database clock and <= includes sessions expiring now.
+    const result = await pool.query(
+      'DELETE FROM sessions WHERE expires_at <= NOW()'
+    )
+    return result.rowCount ?? 0
+  },
+
+  async deleteAllForUser(userId: string): Promise<number> {
+    // Removing every row revokes that user's sessions on all devices.
+    const result = await pool.query(
+      'DELETE FROM sessions WHERE user_id = $1',
+      [userId]
+    )
+    return result.rowCount ?? 0
+  },
 }
 
 // One conversation is one chat about one document. The actual chat text is
@@ -15,8 +182,10 @@ export type ConversationRow = {
   created_at: string
 }
 
+// Restrict message roles to values accepted by both Postgres and Ollama.
 export type MessageRole = 'user' | 'assistant'
 
+// Messages belong to a conversation and are stored one turn per row.
 export type MessageRow = {
   id: string
   conversation_id: string
@@ -25,8 +194,11 @@ export type MessageRow = {
   created_at: string
 }
 
+// Conversation helpers manage chat containers, not the individual messages.
 export const Conversations = {
   async create(documentId: string) {
+    // A conversation is tied to one document so its history cannot silently
+    // mix context from unrelated PDFs.
     const { rows } = await pool.query<ConversationRow>(
       'INSERT INTO conversations (document_id) VALUES ($1) RETURNING *',
       [documentId]
@@ -35,6 +207,7 @@ export const Conversations = {
   },
 
   async getById(id: string) {
+    // Used when a client sends conversationId to continue an existing chat.
     const { rows } = await pool.query<ConversationRow>(
       'SELECT * FROM conversations WHERE id = $1',
       [id]
@@ -43,6 +216,7 @@ export const Conversations = {
   },
 
   async getByDocumentId(documentId: string) {
+    // Newest first is useful for a future conversation-history screen.
     const { rows } = await pool.query<ConversationRow>(
       'SELECT * FROM conversations WHERE document_id = $1 ORDER BY created_at DESC',
       [documentId]
@@ -51,8 +225,11 @@ export const Conversations = {
   },
 }
 
+// Message helpers persist and retrieve the ordered turns inside a conversation.
 export const Messages = {
   async create(conversationId: string, role: MessageRole, content: string) {
+    // Reject blank messages here as well as in Postgres, giving callers a
+    // clearer error before a database round trip.
     const trimmedContent = content.trim()
     if (!trimmedContent) {
       throw new Error('Message content cannot be empty')
@@ -68,6 +245,8 @@ export const Messages = {
   },
 
   async getByConversationId(conversationId: string) {
+    // created_at plus id gives stable chronological ordering if two messages
+    // happen to receive the same timestamp.
     const { rows } = await pool.query<MessageRow>(
       `SELECT *
        FROM messages
@@ -136,6 +315,7 @@ export type ChunkRow = {
 
 export type JobStatus = 'pending' | 'parsing' | 'embedding' | 'done' | 'failed'
 
+// A job records the ingestion worker's current state and any failure details.
 export type Job = {
   id: string
   document_id: string
@@ -147,8 +327,10 @@ export type Job = {
   updated_at: string
 }
 
+// Jobs let uploads return quickly while PDF ingestion runs in the background.
 export const Jobs = {
   async create(documentId: string, type = 'ingest') {
+    // New jobs use the table's default pending status.
     const { rows } = await pool.query<Job>(
       'INSERT INTO jobs (document_id, type) VALUES ($1, $2) RETURNING *',
       [documentId, type]
@@ -157,11 +339,13 @@ export const Jobs = {
   },
 
   async getById(id: string) {
+    // The job-status endpoint polls this helper while ingestion is running.
     const { rows } = await pool.query<Job>('SELECT * FROM jobs WHERE id = $1', [id])
     return rows[0] ?? null
   },
 
   async getLatestForDocument(documentId: string) {
+    // A document may have multiple attempts, so LIMIT 1 selects the newest.
     const { rows } = await pool.query<Job>(
       'SELECT * FROM jobs WHERE document_id = $1 ORDER BY created_at DESC LIMIT 1',
       [documentId]
@@ -192,6 +376,7 @@ export const Jobs = {
   },
 
   async updateStatus(id: string, status: JobStatus, error: string | null = null) {
+    // RETURNING lets the worker receive the updated state in the same query.
     const { rows } = await pool.query<Job>(
       'UPDATE jobs SET status = $2, error = $3 WHERE id = $1 RETURNING *',
       [id, status, error]
@@ -200,6 +385,8 @@ export const Jobs = {
   },
 }
 
+// Document helpers manage the top-level PDF record. File bytes live in local
+// storage; storage_key links that file to its database metadata.
 export const Documents = {
   async create(
     title: string,
@@ -208,6 +395,8 @@ export const Documents = {
     metadata: Record<string, unknown> = {},
     storageKey: string | null = null
   ) {
+    // Metadata remains JSON so ingestion can attach optional details without
+    // requiring a new column for each one.
     const { rows } = await pool.query<DocumentRow>(
       `INSERT INTO documents (title, filename, mime_type, metadata, storage_key)
        VALUES ($1, $2, $3, $4, $5)
@@ -218,11 +407,14 @@ export const Documents = {
   },
 
   async getById(id: string) {
+    // Query and ingestion services use this to verify a document exists.
     const { rows } = await pool.query<DocumentRow>('SELECT * FROM documents WHERE id = $1', [id])
     return rows[0] ?? null
   },
 
   async getAll() {
+    // This is the current single-user listing behavior; ownership scoping is a
+    // separate auth phase and is intentionally not mixed into this helper yet.
     const { rows } = await pool.query<DocumentRow>('SELECT * FROM documents ORDER BY uploaded_at DESC')
     return rows
   }
@@ -275,8 +467,10 @@ export type KeywordRetrievedChunk = {
 
 const CHUNK_COLUMNS_PER_ROW = 7
 
+// Chunk helpers cover ingestion persistence plus the two retrieval strategies.
 export const Chunks = {
   async insertMany(documentId: string, chunks: NewChunk[]): Promise<ChunkRow[]> {
+    // Avoid opening a transaction or issuing invalid SQL for an empty batch.
     if (chunks.length === 0) return []
 
     // A transaction needs every statement to run on the SAME connection —
@@ -337,16 +531,20 @@ export const Chunks = {
   },
 
   async getByDocumentId(documentId: string) {
+    // Chunk index restores the document order assigned during chunking.
     const { rows } = await pool.query<ChunkRow>('SELECT * FROM chunks WHERE document_id = $1 ORDER BY chunk_index ASC', [documentId])
     return rows
   },
 
   async getById(id: string) {
+    // IDs identify one persisted chunk independently of its position.
     const { rows } = await pool.query<ChunkRow>('SELECT * FROM chunks WHERE id = $1', [id])
     return rows[0] ?? null
   }, 
 
   async getByDocumentIdAndIndex(documentId: string, chunkIndex: number) {
+    // The pair is unique and is useful when tests or citations know a chunk's
+    // position within a particular document.
     const { rows } = await pool.query<ChunkRow>('SELECT * FROM chunks WHERE document_id = $1 AND chunk_index = $2', [documentId, chunkIndex])
     return rows[0] ?? null
   },
