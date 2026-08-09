@@ -6,8 +6,12 @@ import {
   queryConversation,
 } from '../services/query.js'
 import { streamPreparedQuery } from '../services/query-stream.js'
+import { requireAuth, type AuthEnv } from '../middleware/auth.js'
 
-export const queryRoute = new Hono()
+export const queryRoute = new Hono<AuthEnv>()
+
+// This protects both normal and streaming query endpoints declared below.
+queryRoute.use(requireAuth)
 
 queryRoute.post('/', async (c) => {
   try {

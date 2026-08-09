@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono'
-import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
+import { getCookie, setCookie } from 'hono/cookie'
 import {
   createSessionToken,
   hashPassword,
@@ -7,16 +7,16 @@ import {
   verifyPassword,
 } from '../lib/auth.js'
 import { Sessions, Users, type UserRow } from '../lib/db.js'
+import {
+  clearSessionCookie,
+  SESSION_COOKIE,
+  SESSION_COOKIE_SECURE,
+} from '../middleware/auth.js'
 
 export const authRoute = new Hono()
 
-const SESSION_COOKIE = 'corpus_session'
 const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000
 const SESSION_DURATION_SECONDS = SESSION_DURATION_MS / 1000
-
-// Local HTTP development cannot use Secure cookies. Production should run
-// behind HTTPS, where Secure prevents the browser sending this cookie by HTTP.
-const USE_SECURE_COOKIES = process.env.NODE_ENV === 'production'
 
 type Credentials = {
   email: string
@@ -75,23 +75,13 @@ async function startSession(c: Context, userId: string): Promise<Date> {
   setCookie(c, SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'Lax',
-    secure: USE_SECURE_COOKIES,
+    secure: SESSION_COOKIE_SECURE,
     path: '/',
     expires: expiresAt,
     maxAge: SESSION_DURATION_SECONDS,
   })
 
   return expiresAt
-}
-
-function clearSessionCookie(c: Context): void {
-  // Deletion must use the same path as creation or the original cookie can
-  // remain in the browser under a different path.
-  deleteCookie(c, SESSION_COOKIE, {
-    path: '/',
-    secure: USE_SECURE_COOKIES,
-    sameSite: 'Lax',
-  })
 }
 
 function isUniqueViolation(error: unknown): boolean {

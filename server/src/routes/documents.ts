@@ -1,8 +1,13 @@
 import { Hono } from 'hono'
 import { Documents, Jobs, pool } from '../lib/db.js'
 import { deletePdf, savePdf } from '../lib/storage.js'
+import { requireAuth, type AuthEnv } from '../middleware/auth.js'
 
-export const documentsRoute = new Hono()
+export const documentsRoute = new Hono<AuthEnv>()
+
+// Pathless use applies authentication to every route declared below without
+// relying on Hono's explicit wildcard path matching.
+documentsRoute.use(requireAuth)
 
 documentsRoute.post('/', async (c) => {
   let storageKey: string | null = null

@@ -1,7 +1,11 @@
 import { Hono } from 'hono'
 import { Jobs } from '../lib/db.js'
+import { requireAuth, type AuthEnv } from '../middleware/auth.js'
 
-export const jobsRoute = new Hono()
+export const jobsRoute = new Hono<AuthEnv>()
+
+// Every job-status request must establish an authenticated user first.
+jobsRoute.use(requireAuth)
 
 jobsRoute.get('/:jobId', async (c) => {
   const jobId = c.req.param('jobId')
