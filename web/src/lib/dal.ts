@@ -24,7 +24,7 @@ export const getCurrentUser = cache(async (): Promise<AuthUser | null> => {
 });
 
 /** Protected server UI can call this instead of repeating redirect checks. */
-export async function requireCurrentUser(): Promise<AuthUser> {
+export async function requireUser(): Promise<AuthUser> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   return user;

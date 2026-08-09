@@ -294,17 +294,18 @@ Who is currently logged in?
 It contains:
 
 - getCurrentUser()
-- requireCurrentUser()
+- requireUser()
 
 getCurrentUser() calls GET /auth/me and returns either the verified user or null. It uses React cache() so repeated checks during the same server render do not repeat the same backend request.
 
-requireCurrentUser() calls getCurrentUser(). If no user exists, it redirects to /login. Protected server UI can call one helper instead of repeating the API call and redirect logic everywhere.
+requireUser() calls getCurrentUser(). If no user exists, it redirects to /login. Protected server UI can call one helper instead of repeating the API call and redirect logic everywhere.
 
 The exact DAL flow for /documents is:
 
 ```text
 browser requests /documents with cookie
--> documents layout calls requireCurrentUser()
+-> proxy.ts first checks whether the cookie exists
+-> documents layout calls requireUser()
 -> DAL calls GET /auth/me
 -> Next forwards cookie to Hono
 -> Hono finds active session
@@ -319,7 +320,7 @@ If the session is invalid:
 ```text
 Hono returns 401
 -> DAL turns expected 401 into null
--> requireCurrentUser() redirects to /login
+-> requireUser() redirects to /login
 ```
 
 The biggest clarification we made was this:
@@ -398,3 +399,20 @@ Short version:
 - Ownership SQL: checks whether that verified user owns the resource.
 - DAL: gives frontend server code one clean way to ask who is logged in.
 - Backend: remains the final authority for all protected data and operations.
+
+## 15. Next.js Proxy
+
+Next.js 16 renamed middleware.ts to proxy.ts. Proxy runs before the matched page renders.
+
+Our proxy only matches /documents and its child routes. It performs one cheap optimistic check:
+
+```text
+session cookie missing
+-> redirect to /login immediately
+
+session cookie present
+-> allow request to continue
+-> requireUser() performs real verification through /auth/me
+```
+
+Proxy does not query Postgres or call the backend. Cookie presence alone cannot prove authentication because the cookie could be expired, revoked, or fake. The DAL and backend still perform the real session verification.

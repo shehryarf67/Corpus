@@ -1,4 +1,4 @@
-import { requireCurrentUser } from "@/lib/dal";
+import { requireUser } from "@/lib/dal";
 
 /** This layout is the auth wrapper for every /documents page below it. */
 export default async function DocumentsLayout({
@@ -6,7 +6,7 @@ export default async function DocumentsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  await requireCurrentUser();
+  await requireUser();
 
   return children;
 }
