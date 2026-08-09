@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { logoutAction } from "@/app/auth-actions";
+import { AccountMenu } from "./account-menu";
 import { Wordmark } from "./wordmark";
 
 /**
@@ -17,17 +17,7 @@ export function TopBar({ children }: { children?: React.ReactNode }) {
       {children}
 
       <div className="ml-auto flex items-center gap-3">
-        <div className="grid h-[27px] w-[27px] place-items-center rounded-full border border-rule-strong bg-raise font-mono text-[10.5px] text-graphite">
-          SH
-        </div>
-        <form action={logoutAction}>
-          <button
-            type="submit"
-            className="cursor-pointer font-mono text-[10.5px] text-graphite-dim transition-colors hover:text-bone"
-          >
-            Sign out
-          </button>
-        </form>
+        <AccountMenu />
       </div>
     </header>
   );

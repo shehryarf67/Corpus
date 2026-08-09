@@ -416,3 +416,24 @@ session cookie present
 ```
 
 Proxy does not query Postgres or call the backend. Cookie presence alone cannot prove authentication because the cookie could be expired, revoked, or fake. The DAL and backend still perform the real session verification.
+
+## 16. Account menu and logout UI
+
+The top bar avatar now opens an AccountMenu. Sign out is no longer always shown beside the avatar.
+
+The account menu submits to the existing logout Server Action:
+
+```text
+avatar
+-> AccountMenu
+-> Sign out
+-> logoutAction()
+-> POST /auth/logout
+-> backend hashes cookie token
+-> matching sessions row is deleted
+-> backend expires cookie
+-> Next copies the cookie deletion to the browser
+-> redirect to /login
+```
+
+We do not log out by only deleting the browser cookie. The backend session row is revoked first, so a copied version of the old token cannot continue authenticating requests.
