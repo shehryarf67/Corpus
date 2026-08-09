@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AnnotatedDocument } from "@/components/annotated-document";
 import { Wordmark } from "@/components/wordmark";
-import { getCurrentUser } from "@/lib/auth-api";
+import { getCurrentUser } from "@/lib/dal";
 import { AuthForm } from "./auth-form";
 
 export const metadata: Metadata = {

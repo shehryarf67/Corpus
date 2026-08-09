@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth-api";
+import { requireCurrentUser } from "@/lib/dal";
 
 /** This layout is the auth wrapper for every /documents page below it. */
 export default async function DocumentsLayout({
@@ -7,8 +6,7 @@ export default async function DocumentsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  await requireCurrentUser();
 
   return children;
 }

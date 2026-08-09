@@ -1,8 +1,7 @@
 import "server-only";
 
 import { cookies } from "next/headers";
-import { ApiError } from "./api-error";
-import { request, requestRaw } from "./api";
+import { requestRaw } from "./api";
 
 const SESSION_COOKIE = "corpus_session";
 
@@ -17,7 +16,6 @@ type AuthResponse = {
   sessionExpiresAt: string;
 };
 
-type MeResponse = { user: AuthUser };
 type LogoutResponse = { ok: boolean };
 
 /**
@@ -104,15 +102,4 @@ export async function logout(): Promise<LogoutResponse> {
   const response = await requestRaw("/auth/logout", { method: "POST" });
   await copySessionCookie(response);
   return (await response.json()) as LogoutResponse;
-}
-
-export async function getCurrentUser(): Promise<AuthUser | null> {
-  try {
-    const response = await request<MeResponse>("/auth/me");
-    return response.user;
-  } catch (error) {
-    // Signed out is an expected UI state. Real backend failures stay visible.
-    if (error instanceof ApiError && error.status === 401) return null;
-    throw error;
-  }
 }

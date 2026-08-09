@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth-api";
+import { getCurrentUser } from "@/lib/dal";
 
 // Send each visitor to the correct side of the authentication boundary.
 export default async function Home() {
