@@ -29,6 +29,7 @@
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "^6.2.108",
     "pg": "^8.22.0",
+    "scrypt-ts": "^1.4.5",
     "tiktoken": "^1.0.22",
     "voyageai": "^0.4.0"
   },
