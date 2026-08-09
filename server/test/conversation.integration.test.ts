@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict'
-import { after, test } from 'node:test'
+import { after, before, test } from 'node:test'
 import { Conversations, Documents, Messages, pool } from '../src/lib/db.js'
+import { createTestUser } from './auth-fixture.js'
+
+let testUserId: string
+
+before(async () => {
+  testUserId = (await createTestUser('conversation')).id
+})
 
 after(async () => {
+  await pool.query('DELETE FROM users WHERE id = $1', [testUserId])
   await pool.end()
 })
 
@@ -11,6 +19,7 @@ test('a conversation stores its messages in chronological order', async () => {
 
   try {
     const document = await Documents.create(
+      testUserId,
       'Conversation integration test',
       'conversation-test.pdf',
       'application/pdf'
@@ -58,6 +67,7 @@ test('recent history keeps the newest messages but returns them oldest first', a
 
   try {
     const document = await Documents.create(
+      testUserId,
       'Recent history test',
       'recent-history-test.pdf',
       'application/pdf'
@@ -86,6 +96,7 @@ test('recent history keeps the newest messages but returns them oldest first', a
 
 test('deleting a document also deletes its conversations and messages', async () => {
   const document = await Documents.create(
+    testUserId,
     'Conversation cascade test',
     'conversation-cascade-test.pdf',
     'application/pdf'

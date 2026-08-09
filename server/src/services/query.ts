@@ -1,4 +1,4 @@
-import { Chunks, Conversations, Messages } from '../lib/db.js'
+import { Chunks, Conversations, Documents, Messages } from '../lib/db.js'
 import { embed } from '../lib/embeddings.js'
 import { buildContext, type ContextSource } from '../lib/context.js'
 import { chat, type ChatMessage } from '../lib/generation.js'
@@ -53,10 +53,18 @@ export class QueryConversationError extends Error {
 export async function prepareQuery(
   documentId: string,
   question: string,
+  userId: string,
   conversationId?: string
 ): Promise<PreparedQuery> {
+  // This scoped lookup is the ownership gate for both normal and streaming
+  // queries. A foreign document looks exactly like a missing document.
+  const document = await Documents.getByIdForUser(documentId, userId)
+  if (!document) {
+    throw new QueryConversationError('Document not found', 404)
+  }
+
   const conversation = conversationId
-    ? await Conversations.getById(conversationId)
+    ? await Conversations.getByIdForUser(conversationId, userId)
     : await Conversations.create(documentId)
 
   if (!conversation) {
@@ -130,9 +138,15 @@ export async function prepareQuery(
 export async function queryConversation(
   documentId: string,
   question: string,
+  userId: string,
   conversationId?: string
 ): Promise<ConversationQueryResult> {
-  const prepared = await prepareQuery(documentId, question, conversationId)
+  const prepared = await prepareQuery(
+    documentId,
+    question,
+    userId,
+    conversationId
+  )
 
   if (prepared.sources.length === 0) {
     await Messages.create(

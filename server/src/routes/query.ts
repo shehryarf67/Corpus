@@ -38,6 +38,7 @@ queryRoute.post('/', async (c) => {
     const result = await queryConversation(
       documentId.trim(),
       question.trim(),
+      c.get('user').id,
       conversationId?.trim()
     )
     return c.json(result)
@@ -77,6 +78,7 @@ queryRoute.post('/stream', async (c) => {
     const prepared = await prepareQuery(
       documentId.trim(),
       question.trim(),
+      c.get('user').id,
       conversationId?.trim()
     )
 

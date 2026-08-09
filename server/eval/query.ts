@@ -1,4 +1,4 @@
-import { Conversations, pool } from '../src/lib/db.js'
+import { Conversations, Documents, pool } from '../src/lib/db.js'
 import { queryConversation } from '../src/services/query.js'
 import { queryEvaluationCases } from './query-dataset.js'
 import {
@@ -73,6 +73,8 @@ function selectedCases() {
 
 async function main(): Promise<void> {
   const documentId = await findEvaluationDocumentId()
+  const document = await Documents.getById(documentId)
+  if (!document) throw new Error('Evaluation document was not found')
   const rows: EvaluationRow[] = []
   const cases = selectedCases()
   let activeConversationId: string | undefined
@@ -114,6 +116,7 @@ async function main(): Promise<void> {
           const result = await queryConversation(
             documentId,
             turn.question,
+            document.user_id,
             conversation.id
           )
           const latencyMs = performance.now() - startedAt

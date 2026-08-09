@@ -215,6 +215,20 @@ export const Conversations = {
     return rows[0] ?? null
   },
 
+  async getByIdForUser(id: string, userId: string) {
+    // The JOIN makes a foreign conversation indistinguishable from a missing
+    // one: both return no row to the user-facing query service.
+    const { rows } = await pool.query<ConversationRow>(
+      `SELECT conversations.*
+       FROM conversations
+       INNER JOIN documents ON documents.id = conversations.document_id
+       WHERE conversations.id = $1
+         AND documents.user_id = $2`,
+      [id, userId]
+    )
+    return rows[0] ?? null
+  },
+
   async getByDocumentId(documentId: string) {
     // Newest first is useful for a future conversation-history screen.
     const { rows } = await pool.query<ConversationRow>(
@@ -284,6 +298,7 @@ export const Messages = {
 // the jobs table.
 export type DocumentRow = {
   id: string
+  user_id: string
   title: string
   filename: string
   mime_type: string
@@ -344,6 +359,20 @@ export const Jobs = {
     return rows[0] ?? null
   },
 
+  async getByIdForUser(id: string, userId: string) {
+    // Jobs inherit ownership from their document. Selecting jobs.* avoids
+    // returning the joined document columns or creating duplicate IDs.
+    const { rows } = await pool.query<Job>(
+      `SELECT jobs.*
+       FROM jobs
+       INNER JOIN documents ON documents.id = jobs.document_id
+       WHERE jobs.id = $1
+         AND documents.user_id = $2`,
+      [id, userId]
+    )
+    return rows[0] ?? null
+  },
+
   async getLatestForDocument(documentId: string) {
     // A document may have multiple attempts, so LIMIT 1 selects the newest.
     const { rows } = await pool.query<Job>(
@@ -389,6 +418,7 @@ export const Jobs = {
 // storage; storage_key links that file to its database metadata.
 export const Documents = {
   async create(
+    userId: string,
     title: string,
     filename: string,
     mimeType: string,
@@ -398,10 +428,10 @@ export const Documents = {
     // Metadata remains JSON so ingestion can attach optional details without
     // requiring a new column for each one.
     const { rows } = await pool.query<DocumentRow>(
-      `INSERT INTO documents (title, filename, mime_type, metadata, storage_key)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO documents (user_id, title, filename, mime_type, metadata, storage_key)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [title, filename, mimeType, metadata, storageKey]
+      [userId, title, filename, mimeType, metadata, storageKey]
     )
     return rows[0]
   },
@@ -412,9 +442,43 @@ export const Documents = {
     return rows[0] ?? null
   },
 
+  async getByIdForUser(id: string, userId: string) {
+    const { rows } = await pool.query<DocumentRow>(
+      `SELECT *
+       FROM documents
+       WHERE id = $1
+         AND user_id = $2`,
+      [id, userId]
+    )
+    return rows[0] ?? null
+  },
+
+  async getAllForUser(userId: string) {
+    const { rows } = await pool.query<DocumentRow>(
+      `SELECT *
+       FROM documents
+       WHERE user_id = $1
+       ORDER BY uploaded_at DESC`,
+      [userId]
+    )
+    return rows
+  },
+
+  async deleteByIdForUser(id: string, userId: string) {
+    // Ownership and deletion happen atomically. A missing or foreign document
+    // returns no row, avoiding both information leaks and check/delete races.
+    const { rows } = await pool.query<DocumentRow>(
+      `DELETE FROM documents
+       WHERE id = $1
+         AND user_id = $2
+       RETURNING *`,
+      [id, userId]
+    )
+    return rows[0] ?? null
+  },
+
   async getAll() {
-    // This is the current single-user listing behavior; ownership scoping is a
-    // separate auth phase and is intentionally not mixed into this helper yet.
+    // Internal-only unscoped listing. HTTP routes must use getAllForUser().
     const { rows } = await pool.query<DocumentRow>('SELECT * FROM documents ORDER BY uploaded_at DESC')
     return rows
   }

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { after, afterEach, test } from 'node:test'
+import { after, afterEach, before, test } from 'node:test'
 import type { ContextSource } from '../src/lib/context.js'
 import { Conversations, Documents, Messages, pool } from '../src/lib/db.js'
 import type { ChatMessage } from '../src/lib/generation.js'
@@ -8,15 +8,22 @@ import {
   streamPreparedQuery,
   type QueryStreamEvent,
 } from '../src/services/query-stream.js'
+import { createTestUser } from './auth-fixture.js'
 
 const originalFetch = globalThis.fetch
 const encoder = new TextEncoder()
+let testUserId: string
+
+before(async () => {
+  testUserId = (await createTestUser('query-stream-service')).id
+})
 
 afterEach(() => {
   globalThis.fetch = originalFetch
 })
 
 after(async () => {
+  await pool.query('DELETE FROM users WHERE id = $1', [testUserId])
   await pool.end()
 })
 
@@ -44,6 +51,7 @@ test('streamPreparedQuery emits events in order and saves one complete answer', 
 
   try {
     const document = await Documents.create(
+      testUserId,
       'Streaming service integration test',
       'streaming-service-test.pdf',
       'application/pdf'
@@ -126,6 +134,7 @@ test('streamPreparedQuery handles no sources without calling Ollama', async () =
 
   try {
     const document = await Documents.create(
+      testUserId,
       'No-source stream test',
       'no-source-stream-test.pdf',
       'application/pdf'
@@ -169,6 +178,7 @@ test('streamPreparedQuery propagates a stream error and does not save a partial 
 
   try {
     const document = await Documents.create(
+      testUserId,
       'Stream error test',
       'stream-error-test.pdf',
       'application/pdf'

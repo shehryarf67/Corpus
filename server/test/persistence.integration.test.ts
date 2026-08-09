@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { after, test } from 'node:test'
+import { after, before, test } from 'node:test'
 import { Chunks, Documents, pool } from '../src/lib/db.js'
 import type { EmbeddedChunk } from '../src/lib/pdf/embed.js'
 import { persistEmbeddedChunks } from '../src/lib/pdf/persist.js'
+import { createTestUser } from './auth-fixture.js'
+
+let testUserId: string
+
+before(async () => {
+  testUserId = (await createTestUser('persistence')).id
+})
 
 const makeEmbedding = (seed: number): number[] =>
   Array.from({ length: 384 }, (_, i) => ((i + seed) % 100) / 100)
@@ -22,6 +29,7 @@ const makeEmbeddedChunk = (
 })
 
 after(async () => {
+  await pool.query('DELETE FROM users WHERE id = $1', [testUserId])
   await pool.end()
 })
 
@@ -31,6 +39,7 @@ test('persistEmbeddedChunks bulk inserts and retrieves real pgvector rows', asyn
   try {
     const storageKey = `${randomUUID()}.pdf`
     const document = await Documents.create(
+      testUserId,
       'Persistence integration test',
       'persistence-test.pdf',
       'application/pdf',
@@ -74,6 +83,7 @@ test('a duplicate chunk index rejects the whole bulk insert', async () => {
 
   try {
     const document = await Documents.create(
+      testUserId,
       'Persistence rollback test',
       'rollback-test.pdf',
       'application/pdf',
@@ -103,6 +113,7 @@ test('searchSimilar returns chunks ordered by cosine similarity', async () => {
 
   try {
     const document = await Documents.create(
+      testUserId,
       'Vector retrieval integration test',
       'retrieval-test.pdf',
       'application/pdf',

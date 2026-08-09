@@ -1,19 +1,31 @@
 import assert from 'node:assert/strict'
-import { after, afterEach, test } from 'node:test'
+import { after, afterEach, before, test } from 'node:test'
 import { Hono } from 'hono'
 import { Documents, Messages, pool } from '../src/lib/db.js'
 import { embedChunks } from '../src/lib/pdf/embed.js'
 import { persistEmbeddedChunks } from '../src/lib/pdf/persist.js'
 import { queryRoute } from '../src/routes/query.js'
+import {
+  createTestSessionCookie,
+  createTestUser,
+} from './auth-fixture.js'
 
 const originalFetch = globalThis.fetch
 const encoder = new TextEncoder()
+let testUserId: string
+let sessionCookie: string
+
+before(async () => {
+  testUserId = (await createTestUser('query-stream-route')).id
+  sessionCookie = await createTestSessionCookie(testUserId)
+})
 
 afterEach(() => {
   globalThis.fetch = originalFetch
 })
 
 after(async () => {
+  await pool.query('DELETE FROM users WHERE id = $1', [testUserId])
   await pool.end()
 })
 
@@ -41,6 +53,7 @@ test('POST /query/stream translates service events into SSE', async () => {
 
   try {
     const document = await Documents.create(
+      testUserId,
       'Streaming route integration test',
       'streaming-route-test.pdf',
       'application/pdf'
@@ -88,7 +101,10 @@ test('POST /query/stream translates service events into SSE', async () => {
 
     const response = await app.request('/query/stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: sessionCookie,
+      },
       body: JSON.stringify({
         documentId: document.id,
         question: 'Which planet is known as the Red Planet?',
@@ -139,7 +155,10 @@ test('POST /query/stream translates service events into SSE', async () => {
 
     const failedResponse = await app.request('/query/stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: sessionCookie,
+      },
       body: JSON.stringify({
         documentId: document.id,
         question: 'Ask a question that fails during generation',

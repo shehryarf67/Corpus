@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { Hono } from 'hono'
-import { Messages, pool } from '../src/lib/db.js'
+import { Documents, Messages, pool } from '../src/lib/db.js'
 import { queryRoute } from '../src/routes/query.js'
+import { createTestSessionCookie } from './auth-fixture.js'
 
 type SSEEvent = {
   event: string
@@ -83,6 +84,9 @@ async function readSSE(response: Response): Promise<SSEEvent[]> {
 
 test('real /query/stream sends incremental Ollama tokens and persists the final answer', async () => {
   const documentId = await findTestDocumentId()
+  const document = await Documents.getById(documentId)
+  if (!document) throw new Error('E2E document was not found')
+  const sessionCookie = await createTestSessionCookie(document.user_id)
   const app = new Hono()
   app.route('/query', queryRoute)
 
@@ -91,7 +95,10 @@ test('real /query/stream sends incremental Ollama tokens and persists the final 
   try {
     const response = await app.request('/query/stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: sessionCookie,
+      },
       body: JSON.stringify({
         documentId,
         question: 'Which four NLP tasks are used to evaluate AQ-BERT?',

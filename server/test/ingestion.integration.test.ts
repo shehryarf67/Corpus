@@ -6,11 +6,14 @@ import { after, before, test } from 'node:test'
 import { Chunks, Documents, Jobs, pool } from '../src/lib/db.js'
 import { deletePdf, savePdf } from '../src/lib/storage.js'
 import { processIngestionJob } from '../src/services/ingestion.js'
+import { createTestUser } from './auth-fixture.js'
 
 let testStorageDirectory: string
 let previousStorageDirectory: string | undefined
+let testUserId: string
 
 before(async () => {
+  testUserId = (await createTestUser('ingestion')).id
   previousStorageDirectory = process.env.PDF_STORAGE_DIR
   testStorageDirectory = await mkdtemp(path.join(tmpdir(), 'corpus-ingestion-'))
   process.env.PDF_STORAGE_DIR = testStorageDirectory
@@ -24,6 +27,7 @@ after(async () => {
   }
 
   await rm(testStorageDirectory, { recursive: true, force: true })
+  await pool.query('DELETE FROM users WHERE id = $1', [testUserId])
   await pool.end()
 })
 
@@ -44,6 +48,7 @@ test('processIngestionJob runs the complete stored-PDF ingestion pipeline', asyn
     storageKey = await savePdf(await readFile(fixturePath))
 
     const document = await Documents.create(
+      testUserId,
       'Ingestion integration test',
       'test.pdf',
       'application/pdf',
@@ -82,6 +87,7 @@ test('processIngestionJob marks the job failed when the document has no stored P
 
   try {
     const document = await Documents.create(
+      testUserId,
       'Missing storage integration test',
       'missing.pdf',
       'application/pdf',

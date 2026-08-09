@@ -1,8 +1,15 @@
 import assert from 'node:assert/strict'
-import { after, test } from 'node:test'
+import { after, before, test } from 'node:test'
 import { Chunks, Documents, pool } from '../src/lib/db.js'
 import type { EmbeddedChunk } from '../src/lib/pdf/embed.js'
 import { persistEmbeddedChunks } from '../src/lib/pdf/persist.js'
+import { createTestUser } from './auth-fixture.js'
+
+let testUserId: string
+
+before(async () => {
+  testUserId = (await createTestUser('retrieval')).id
+})
 
 const testEmbedding = Array.from({ length: 384 }, (_, index) =>
   index === 0 ? 1 : 0
@@ -20,6 +27,7 @@ function makeChunk(chunkIndex: number, content: string): EmbeddedChunk {
 }
 
 after(async () => {
+  await pool.query('DELETE FROM users WHERE id = $1', [testUserId])
   await pool.end()
 })
 
@@ -29,12 +37,14 @@ test('searchByKeyword returns matching chunks from only the selected document', 
 
   try {
     const selectedDocument = await Documents.create(
+      testUserId,
       'Keyword retrieval test',
       'keyword-test.pdf',
       'application/pdf',
       { test: true }
     )
     const otherDocument = await Documents.create(
+      testUserId,
       'Keyword retrieval scope test',
       'other-keyword-test.pdf',
       'application/pdf',

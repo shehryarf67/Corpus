@@ -1,6 +1,8 @@
 import { Hono } from 'hono'
-import { pool } from '../src/lib/db.js'
+import { Documents, pool, Sessions } from '../src/lib/db.js'
 import { queryRoute } from '../src/routes/query.js'
+import { createSessionToken, hashSessionToken } from '../src/lib/auth.js'
+import { SESSION_COOKIE } from '../src/middleware/auth.js'
 import { queryEvaluationCases } from './query-dataset.js'
 import { calculateFactCoverage } from './query-scoring.js'
 
@@ -88,6 +90,14 @@ async function main(): Promise<void> {
   }
 
   const documentId = await findEvaluationDocumentId()
+  const document = await Documents.getById(documentId)
+  if (!document) throw new Error('Evaluation document was not found')
+  const sessionToken = createSessionToken()
+  await Sessions.create(
+    document.user_id,
+    hashSessionToken(sessionToken),
+    new Date(Date.now() + 60 * 60 * 1000)
+  )
   const app = new Hono()
   app.route('/query', queryRoute)
   let conversationId: string | undefined
@@ -96,7 +106,10 @@ async function main(): Promise<void> {
     const startedAt = performance.now()
     const response = await app.request('/query/stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `${SESSION_COOKIE}=${sessionToken}`,
+      },
       body: JSON.stringify({ documentId, question: turn.question }),
     })
     const responseStartedMs = performance.now() - startedAt
@@ -132,6 +145,7 @@ async function main(): Promise<void> {
     if (conversationId) {
       await pool.query('DELETE FROM conversations WHERE id = $1', [conversationId])
     }
+    await Sessions.deleteByTokenHash(hashSessionToken(sessionToken))
     await pool.end()
   }
 }

@@ -11,8 +11,9 @@ jobsRoute.get('/:jobId', async (c) => {
   const jobId = c.req.param('jobId')
 
   try {
-    const job = await Jobs.getById(jobId)
+    const job = await Jobs.getByIdForUser(jobId, c.get('user').id)
 
+    // Missing and foreign jobs intentionally produce the same response.
     if (!job) {
       return c.json({ error: 'Job not found' }, 404)
     }

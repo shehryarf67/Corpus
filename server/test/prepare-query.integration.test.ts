@@ -1,11 +1,19 @@
 import assert from 'node:assert/strict'
-import { after, test } from 'node:test'
+import { after, before, test } from 'node:test'
 import { Documents, Messages, pool } from '../src/lib/db.js'
 import { embedChunks } from '../src/lib/pdf/embed.js'
 import { persistEmbeddedChunks } from '../src/lib/pdf/persist.js'
 import { prepareQuery } from '../src/services/query.js'
+import { createTestUser } from './auth-fixture.js'
+
+let testUserId: string
+
+before(async () => {
+  testUserId = (await createTestUser('prepare-query')).id
+})
 
 after(async () => {
+  await pool.query('DELETE FROM users WHERE id = $1', [testUserId])
   await pool.end()
 })
 
@@ -14,6 +22,7 @@ test('prepareQuery gets generation inputs ready without generating an answer', a
 
   try {
     const document = await Documents.create(
+      testUserId,
       'Prepare query integration test',
       'prepare-query-test.pdf',
       'application/pdf'
@@ -41,7 +50,8 @@ test('prepareQuery gets generation inputs ready without generating an answer', a
 
     const prepared = await prepareQuery(
       document.id,
-      'Which planet is known as the Red Planet?'
+      'Which planet is known as the Red Planet?',
+      testUserId
     )
 
     assert.equal(prepared.sources[0]?.content, embeddedChunks[0]?.content)

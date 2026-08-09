@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { Documents, Jobs, pool } from '../lib/db.js'
+import { Documents, Jobs } from '../lib/db.js'
 import { deletePdf, savePdf } from '../lib/storage.js'
 import { requireAuth, type AuthEnv } from '../middleware/auth.js'
 
@@ -8,6 +8,61 @@ export const documentsRoute = new Hono<AuthEnv>()
 // Pathless use applies authentication to every route declared below without
 // relying on Hono's explicit wildcard path matching.
 documentsRoute.use(requireAuth)
+
+function publicDocument(document: {
+  id: string
+  title: string
+  filename: string
+  mime_type: string
+  metadata: Record<string, unknown>
+  uploaded_at: string
+}) {
+  return {
+    id: document.id,
+    title: document.title,
+    filename: document.filename,
+    mimeType: document.mime_type,
+    metadata: document.metadata,
+    uploadedAt: document.uploaded_at,
+  }
+}
+
+documentsRoute.get('/', async (c) => {
+  const documents = await Documents.getAllForUser(c.get('user').id)
+  return c.json({ documents: documents.map(publicDocument) })
+})
+
+documentsRoute.get('/:documentId', async (c) => {
+  const document = await Documents.getByIdForUser(
+    c.req.param('documentId'),
+    c.get('user').id
+  )
+
+  // Missing and foreign documents intentionally produce the same response.
+  if (!document) return c.json({ error: 'Document not found' }, 404)
+  return c.json({ document: publicDocument(document) })
+})
+
+documentsRoute.delete('/:documentId', async (c) => {
+  const userId = c.get('user').id
+  const document = await Documents.deleteByIdForUser(
+    c.req.param('documentId'),
+    userId
+  )
+
+  if (!document) return c.json({ error: 'Document not found' }, 404)
+
+  // The database deletion already succeeded and cascaded to related rows.
+  // File cleanup is best-effort because the filesystem cannot join that SQL
+  // transaction; a failure leaves an orphaned file, not accessible user data.
+  if (document.storage_key) {
+    await deletePdf(document.storage_key).catch((error) => {
+      console.error(`could not delete stored PDF ${document.storage_key}`, error)
+    })
+  }
+
+  return c.json({ ok: true })
+})
 
 documentsRoute.post('/', async (c) => {
   let storageKey: string | null = null
@@ -37,6 +92,7 @@ documentsRoute.post('/', async (c) => {
     const title = suppliedTitle?.trim() || filenameTitle || 'Untitled document'
 
     const document = await Documents.create(
+      c.get('user').id,
       title,
       file.name,
       file.type || 'application/pdf',
@@ -65,7 +121,9 @@ documentsRoute.post('/', async (c) => {
     // The filesystem and Postgres cannot share one transaction. If setup
     // fails halfway through, remove anything this request already created.
     if (documentId) {
-      await pool.query('DELETE FROM documents WHERE id = $1', [documentId]).catch(() => undefined)
+      await Documents.deleteByIdForUser(documentId, c.get('user').id).catch(
+        () => undefined
+      )
     }
     if (storageKey) {
       await deletePdf(storageKey).catch(() => undefined)
