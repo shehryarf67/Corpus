@@ -307,6 +307,15 @@ export type DocumentRow = {
   uploaded_at: string
 }
 
+// This projection adds the values the document UI needs. The names stay
+// snake_case because this is still a PostgreSQL result, not an HTTP response.
+export type DocumentListRow = DocumentRow & {
+  latest_job_status: JobStatus | null
+  latest_job_error: string | null
+  chunk_count: number
+  page_count: number
+}
+
 // Matches the real `chunks` table columns. Named ChunkRow, not Chunk —
 // `Chunk` already means something different (the in-memory, camelCase
 // shape produced by chunk.ts's groupIntoChunks), and this is a distinct
@@ -462,6 +471,66 @@ export const Documents = {
       [userId]
     )
     return rows
+  },
+
+  async listForUser(userId: string) {
+    const { rows } = await pool.query<DocumentListRow>(
+      `SELECT
+         documents.*,
+         latest_job.status AS latest_job_status,
+         latest_job.error AS latest_job_error,
+         COALESCE(chunk_stats.chunk_count, 0) AS chunk_count,
+         COALESCE(chunk_stats.page_count, 0) AS page_count
+       FROM documents
+       LEFT JOIN LATERAL (
+         SELECT jobs.status, jobs.error
+         FROM jobs
+         WHERE jobs.document_id = documents.id
+         ORDER BY jobs.created_at DESC, jobs.id DESC
+         LIMIT 1
+       ) AS latest_job ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT
+           COUNT(*)::INTEGER AS chunk_count,
+           COALESCE(MAX(chunks.page_number), 0)::INTEGER AS page_count
+         FROM chunks
+         WHERE chunks.document_id = documents.id
+       ) AS chunk_stats ON TRUE
+       WHERE documents.user_id = $1
+       ORDER BY documents.uploaded_at DESC`,
+      [userId]
+    )
+    return rows
+  },
+
+  async getDetailForUser(id: string, userId: string) {
+    const { rows } = await pool.query<DocumentListRow>(
+      `SELECT
+         documents.*,
+         latest_job.status AS latest_job_status,
+         latest_job.error AS latest_job_error,
+         COALESCE(chunk_stats.chunk_count, 0) AS chunk_count,
+         COALESCE(chunk_stats.page_count, 0) AS page_count
+       FROM documents
+       LEFT JOIN LATERAL (
+         SELECT jobs.status, jobs.error
+         FROM jobs
+         WHERE jobs.document_id = documents.id
+         ORDER BY jobs.created_at DESC, jobs.id DESC
+         LIMIT 1
+       ) AS latest_job ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT
+           COUNT(*)::INTEGER AS chunk_count,
+           COALESCE(MAX(chunks.page_number), 0)::INTEGER AS page_count
+         FROM chunks
+         WHERE chunks.document_id = documents.id
+       ) AS chunk_stats ON TRUE
+       WHERE documents.id = $1
+         AND documents.user_id = $2`,
+      [id, userId]
+    )
+    return rows[0] ?? null
   },
 
   async deleteByIdForUser(id: string, userId: string) {

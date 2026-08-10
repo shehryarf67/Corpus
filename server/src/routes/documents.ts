@@ -1,5 +1,10 @@
 import { Hono } from 'hono'
-import { Documents, Jobs } from '../lib/db.js'
+import {
+  Documents,
+  Jobs,
+  type DocumentListRow,
+  type JobStatus,
+} from '../lib/db.js'
 import { deletePdf, savePdf } from '../lib/storage.js'
 import { requireAuth, type AuthEnv } from '../middleware/auth.js'
 
@@ -9,38 +14,62 @@ export const documentsRoute = new Hono<AuthEnv>()
 // relying on Hono's explicit wildcard path matching.
 documentsRoute.use(requireAuth)
 
-function publicDocument(document: {
+// This is the public contract shared by both document GET endpoints. Database
+// rows remain snake_case; JSON sent to the frontend uses camelCase.
+export type DocumentResponse = {
   id: string
   title: string
   filename: string
-  mime_type: string
-  metadata: Record<string, unknown>
-  uploaded_at: string
-}) {
+  mimeType: string
+  uploadedAt: string
+  status: JobStatus | null
+  error: string | null
+  chunkCount: number
+  pageCount: number
+}
+
+export type DocumentsResponse = {
+  documents: DocumentResponse[]
+}
+
+export type SingleDocumentResponse = {
+  document: DocumentResponse
+}
+
+function publicDocument(document: DocumentListRow): DocumentResponse {
   return {
     id: document.id,
     title: document.title,
     filename: document.filename,
     mimeType: document.mime_type,
-    metadata: document.metadata,
     uploadedAt: document.uploaded_at,
+    status: document.latest_job_status,
+    error: document.latest_job_error,
+    chunkCount: document.chunk_count,
+    pageCount: document.page_count,
   }
 }
 
 documentsRoute.get('/', async (c) => {
-  const documents = await Documents.getAllForUser(c.get('user').id)
-  return c.json({ documents: documents.map(publicDocument) })
+  const documents = await Documents.listForUser(c.get('user').id)
+  const response: DocumentsResponse = {
+    documents: documents.map(publicDocument),
+  }
+  return c.json(response)
 })
 
 documentsRoute.get('/:documentId', async (c) => {
-  const document = await Documents.getByIdForUser(
+  const document = await Documents.getDetailForUser(
     c.req.param('documentId'),
     c.get('user').id
   )
 
   // Missing and foreign documents intentionally produce the same response.
   if (!document) return c.json({ error: 'Document not found' }, 404)
-  return c.json({ document: publicDocument(document) })
+  const response: SingleDocumentResponse = {
+    document: publicDocument(document),
+  }
+  return c.json(response)
 })
 
 documentsRoute.delete('/:documentId', async (c) => {
