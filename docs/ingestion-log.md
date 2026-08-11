@@ -2,7 +2,7 @@
 
 This is just a running log of everything we figured out while building the ingestion pipeline (extract.ts, layout.ts, chunk.ts). Not a doc for anyone else, just so i can look back and remember where we got stuck and how we got out of it.
 
-Pipeline shape now: stored PDF -> ingestion job -> layout.ts (extracts and groups text into blocks) -> chunk.ts (blocks into token sized chunks) -> embed.ts (local vectors) -> persist.ts -> Postgres chunks. The upload/request entry point and background worker loop are still separate next steps.
+Pipeline shape now: authenticated PDF upload -> stored PDF + document row + pending ingestion job -> background worker safely claims the job -> layout.ts (extracts and groups text into blocks) -> chunk.ts (blocks into token sized chunks) -> embed.ts (local document vectors) -> persist.ts -> Postgres chunks -> job marked done or failed.
 
 ---
 
@@ -244,7 +244,94 @@ All 16 tests across extract/layout/chunk/embed pass together.
 
 ---
 
-## Persistence phase (starting)
+## Bi-encoder vs cross-encoder, and where each one belongs
+
+These are two different relevance-model patterns. Both happen to use MiniLM models in this project, but they do different jobs and run at different stages.
+
+### Bi-encoder: reusable vectors for fast retrieval
+
+Our bi-encoder is `Xenova/all-MiniLM-L6-v2`, loaded in `server/src/lib/embeddings.ts` as a feature-extraction pipeline.
+
+It encodes each text independently:
+
+```text
+document chunk -> 384-number vector
+question       -> 384-number vector
+```
+
+During ingestion, `embedChunks()` sends batches of chunk content to `embed(texts, 'document')`. `embeddings.ts` mean-pools and normalizes the model output. The resulting 384-number vector is added to each EmbeddedChunk and persisted in `chunks.embedding`.
+
+During query, the same `embed()` helper independently converts the rewritten question into another 384-number vector using `embed([rewrittenQuestion], 'query')`. The local model does not actually have separate document and query modes, so `inputType` is kept as a useful interface boundary but is currently ignored internally.
+
+Postgres compares the question vector with stored chunk vectors using pgvector cosine distance. This is fast because chunk vectors were calculated once during ingestion and can be reused for every future question. The model does not need to reread every question/chunk pair.
+
+The name bi-encoder comes from the two independent encoding paths:
+
+```text
+question -> encoder -> question vector
+chunk    -> encoder -> chunk vector
+
+question vector vs chunk vector -> similarity score
+```
+
+In our current implementation both paths reuse the same MiniLM model, but the texts still pass through separately.
+
+Main strength: fast search over many stored chunks.
+
+Main weakness: the question and chunk do not directly interact while their vectors are being created. Some fine-grained relevance details can be missed because each side has to compress its meaning without seeing the other side.
+
+### Cross-encoder: slower but more precise reranking
+
+Our cross-encoder is `Xenova/ms-marco-MiniLM-L-6-v2`, loaded in `server/src/lib/reranker.ts` as a sequence-classification model.
+
+It does not make one reusable vector for the question and one reusable vector for the chunk. It reads each pair together:
+
+```text
+[question, candidate chunk] -> model -> one relevance score
+```
+
+The actual code repeats the question once for each candidate and supplies chunk content as `text_pair`:
+
+```text
+questions = candidates.map(() => question)
+passages  = candidates.map(chunk => chunk.content)
+tokenizer(questions, { text_pair: passages, ... })
+```
+
+The model returns one raw relevance logit for each pair. `attachRerankerScores()` adds that score to each candidate and sorts highest score first. RRF score and chunk index are stable tie-breakers.
+
+Cross-encoding happens only during the query phase. It does not run during ingestion and does not write anything into `chunks.embedding`.
+
+Running a cross-encoder against every stored chunk would be too slow because the model must reread the question together with every chunk. Our pipeline first uses cheap retrieval to reduce the search space:
+
+```text
+question
+-> vector retrieval top 20
+-> keyword retrieval top 20
+-> RRF combines both rankings
+-> best 15 candidates
+-> cross-encoder reranks those 15
+-> best 5 become generation context
+```
+
+This gives us the useful combination:
+
+```text
+bi-encoder = speed and broad candidate retrieval
+cross-encoder = precision on a small candidate list
+```
+
+### Important placement in the RAG lifecycle
+
+The ingestion phase performs the document side of bi-encoding once and stores those vectors.
+
+The query phase performs the question side of bi-encoding, retrieval, hybrid fusion, and cross-encoder reranking.
+
+So cross-encoding is documented here because it explains why ingestion embeddings exist, but it is not itself an ingestion operation.
+
+---
+
+## Persistence phase
 
 Goal: take a document_id + EmbeddedChunk[], write real rows into `documents` and `chunks`.
 
@@ -383,11 +470,62 @@ Core ingestion is now complete for the learning/portfolio MVP. Remaining items b
 
 ---
 
+## Important updates added after the original ingestion phase
+
+### Authentication and ownership now wrap user-facing ingestion routes
+
+The original ingestion implementation existed before users and sessions were added. The current upload and job-status routes now run through `requireAuth`.
+
+`POST /documents` creates the document with the verified `c.get('user').id`. `GET /jobs/:jobId` uses `Jobs.getByIdForUser`, joining the job to its document so one user cannot inspect another user's ingestion status. Missing and foreign jobs both return 404.
+
+The background worker is different. It is trusted internal server code, not a user-facing route, so it can load the claimed job and document by ID without a browser session. Ownership is established when the authenticated upload creates the document.
+
+### Lazy model loading and reuse
+
+The embedding model is not loaded at module import time. `getExtractor()` creates one promise on the first embedding call, then reuses it for later batches and jobs. First use may download the model into the local cache and therefore takes longer. Later uses load from disk or reuse the already loaded model.
+
+The cross-encoder reranker follows the same pattern for its tokenizer and model, but it loads on the first query that reaches reranking, not during ingestion.
+
+### Real page count is not persisted yet
+
+The Phase 2 document response currently estimates `pageCount` with `MAX(chunks.page_number)`. That can undercount blank, image-only, or trailing pages that produced no chunks.
+
+The correct long-term ingestion design is:
+
+```text
+pdfjs pdfDocument.numPages
+-> ingestion result or document metadata
+-> persisted document page_count
+-> document API returns the stored real value
+```
+
+This belongs in ingestion because the PDF parser knows the true page count. The document-list query should not have to infer it from extracted text.
+
+### Searchable text is derived from persisted chunk content
+
+Keyword retrieval was added later through a generated `chunks.search_vector` column and a GIN index. Ingestion does not manually build this value. Postgres derives it from `chunks.content` when chunks are inserted or updated. This means one persisted chunk supports both vector retrieval through `embedding` and keyword retrieval through `search_vector`.
+
+### Current job status meaning
+
+The current state changes are:
+
+```text
+pending   = upload created the job, worker has not started it
+parsing   = worker claimed it and PDF/layout/chunk work is running
+embedding = local vector creation and persistence are running
+done      = chunks were persisted successfully
+failed    = one pipeline stage threw and its message was recorded
+```
+
+Safe claiming may set parsing before `processIngestionJob()` sets parsing again. That repeated assignment is harmless, although the boundary could be cleaned up later so one layer owns the exact transition.
+
+---
+
 ## Open items / not done yet
 
 - MAX_CHUNK_TOKENS = 500 is a guess, not measured. Once the readme's eval harness (recall@k, MRR) exists, should actually test different values against real retrieval quality instead of assuming 500 is right. Revisit this later, not now.
 - No overlap between NORMAL chunk boundaries (between different blocks), only inside splitOversizedBlock. Decided on purpose, paragraph boundaries are real breaks, not worth the complexity there.
 - char offsets inside splitOversizedBlock are approximate (rejoining sentences/words with a single space doesnt preserve original whitespace exactly, and now overlap means consecutive pieces share text too), not pixel exact against the source pdf. Acceptable for now.
 - Retrying a job is not idempotent yet. If chunks were inserted but marking the job done failed, retrying could hit duplicate chunk indexes. Before adding retries, decide whether to delete/rebuild that document's chunks or make persistence an atomic replace operation.
-- generation.ts has no error handling yet for Ollama not running / model not pulled beyond a generic thrown error on a bad response. Fine for now, worth revisiting once this is wired into a real request path.
+- Ollama generation is part of the query phase, not ingestion. It now has response checks, output-token limits, and request timeouts. See query-log.md for the current generation behavior.
 - If ever revisited: swap local embeddings back to Voyage and local generation back to Claude for a "production mode", since the rest of the pipeline (chunking, schema) barely needs to change either way.
