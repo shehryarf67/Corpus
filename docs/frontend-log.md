@@ -116,3 +116,10 @@ Removed the fabricated paper title, authors, sections, paragraphs, citation high
 The left pane now shows an explicit PDF viewer coming next state using only truthful backend data: the real filename and current pageCount value. It also explains that the original PDF is stored and indexed but rendering pages and jumping to cited passages belong to the viewer phase.
 
 The example chat pane is intentionally unchanged in this step. It remains hard-coded and should be replaced when the real query UI and SSE reader are connected.
+
+Phase 2 mock document cleanup
+=============================
+
+Confirmed there were no remaining imports or references to mock-documents.ts after both document pages moved to the real API, then deleted the file.
+
+The API still estimates pageCount with MAX(chunks.page_number). This remains an acceptable temporary fallback, but it can undercount pages that produced no chunks, such as blank, image-only, or trailing pages. The correct long-term design is to capture pdfDocument.numPages during ingestion and persist that actual value on the document row.
