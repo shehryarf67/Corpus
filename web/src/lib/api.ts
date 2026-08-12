@@ -19,6 +19,36 @@ export type JobResponse = {
   updatedAt: string;
 };
 
+// These values match the backend JobStatus union. `null` means the document
+// currently has no ingestion job, not that the frontend failed to parse it.
+export type DocumentJobStatus =
+  | "pending"
+  | "parsing"
+  | "embedding"
+  | "done"
+  | "failed";
+
+/** The shared public contract returned by both document GET endpoints. */
+export type DocumentResponse = {
+  id: string;
+  title: string;
+  filename: string;
+  mimeType: string;
+  uploadedAt: string;
+  status: DocumentJobStatus | null;
+  error: string | null;
+  chunkCount: number;
+  pageCount: number;
+};
+
+export type DocumentsResponse = {
+  documents: DocumentResponse[];
+};
+
+export type SingleDocumentResponse = {
+  document: DocumentResponse;
+};
+
 export async function requestRaw(
   path: string, // Only necessary route e.g /jobs/123
   options: RequestInit = {}, // Second arg for fetch options, e.g. method, headers, body
@@ -100,4 +130,20 @@ export async function request<T>(
 
 export function getJob(jobId: string): Promise<JobResponse> {
   return request<JobResponse>(`/jobs/${jobId}`);
+}
+
+/** Load every document owned by the authenticated user. */
+export function getDocuments(): Promise<DocumentsResponse> {
+  return request<DocumentsResponse>("/documents");
+}
+
+/** Load one owned document; request() preserves the backend 404 as ApiError. */
+export function getDocument(
+  documentId: string,
+): Promise<SingleDocumentResponse> {
+  // Encoding keeps an accidental slash or other reserved character inside the
+  // path parameter instead of allowing it to change the requested route.
+  return request<SingleDocumentResponse>(
+    `/documents/${encodeURIComponent(documentId)}`,
+  );
 }

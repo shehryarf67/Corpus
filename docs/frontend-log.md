@@ -51,3 +51,21 @@ The tests prove:
 - a foreign document and a random missing ID return the same 404 body
 
 The latest-job timestamps are set explicitly in the fixture. This avoids a flaky test where two jobs created in the same clock tick could rely on random UUID ordering.
+
+Phase 2 frontend document API wrappers
+======================================
+
+Added the frontend copies of the backend document contract to web/src/lib/api.ts:
+
+```text
+DocumentJobStatus
+DocumentResponse
+DocumentsResponse
+SingleDocumentResponse
+```
+
+Added getDocuments() for GET /documents and getDocument(documentId) for GET /documents/:documentId. Both use the existing request<T>() helper, so the Next server automatically forwards the session cookie to Hono, disables caching, parses JSON, and turns non-success responses into ApiError.
+
+getDocument() URL-encodes the document ID before placing it in the path. A backend 404 is deliberately not converted here. The future detail page will catch ApiError with status 404 and call Next's notFound().
+
+These wrappers describe transport data only. They do not yet map backend job statuses into the library UI's temporary ready/indexing/failed labels, and the pages still use mock documents at this checkpoint.
