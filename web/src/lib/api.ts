@@ -49,6 +49,13 @@ export type SingleDocumentResponse = {
   document: DocumentResponse;
 };
 
+/** POST /documents accepts the upload and queues ingestion in the background. */
+export type UploadDocumentResponse = {
+  documentId: string;
+  jobId: string;
+  status: DocumentJobStatus;
+};
+
 export async function requestRaw(
   path: string, // Only necessary route e.g /jobs/123
   options: RequestInit = {}, // Second arg for fetch options, e.g. method, headers, body
@@ -146,4 +153,24 @@ export function getDocument(
   return request<SingleDocumentResponse>(
     `/documents/${encodeURIComponent(documentId)}`,
   );
+}
+
+/** Upload one PDF and receive the pending ingestion job created by Hono. */
+export function uploadDocument(
+  file: File,
+  title?: string,
+): Promise<UploadDocumentResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  if (title !== undefined) {
+    formData.append("title", title);
+  }
+
+  return request<UploadDocumentResponse>("/documents", {
+    method: "POST",
+    body: formData,
+    // Do not set Content-Type manually. fetch adds multipart/form-data plus
+    // the unique boundary Hono needs in order to parse this FormData body.
+  });
 }

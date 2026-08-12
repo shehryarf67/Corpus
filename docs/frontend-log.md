@@ -123,3 +123,14 @@ Phase 2 mock document cleanup
 Confirmed there were no remaining imports or references to mock-documents.ts after both document pages moved to the real API, then deleted the file.
 
 The API still estimates pageCount with MAX(chunks.page_number). This remains an acceptable temporary fallback, but it can undercount pages that produced no chunks, such as blank, image-only, or trailing pages. The correct long-term design is to capture pdfDocument.numPages during ingestion and persist that actual value on the document row.
+
+Phase 3 upload plumbing
+=======================
+
+Raised Next's Server Action bodySizeLimit to 21mb. The backend's actual PDF limit remains 20 MiB. Next measures the complete multipart request body, not only the file bytes, so the additional 1 MiB leaves safe room for multipart boundaries, part headers, and the optional title without raising the application's real file policy.
+
+Added UploadDocumentResponse and uploadDocument(file, title?) to web/src/lib/api.ts. The wrapper creates FormData, appends the file and optional title, and sends POST /documents through request<T>(). The shared request helper forwards the session cookie and converts backend failures into ApiError.
+
+The wrapper deliberately does not set Content-Type. fetch generates a multipart/form-data header containing a unique boundary that matches the encoded body. Manually setting only multipart/form-data would omit that boundary and prevent Hono from parsing the fields correctly.
+
+The upload response contains documentId, jobId, and the initial job status. Upload acceptance does not mean ingestion is finished; the worker processes the returned job in the background.
