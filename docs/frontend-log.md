@@ -134,3 +134,23 @@ Added UploadDocumentResponse and uploadDocument(file, title?) to web/src/lib/api
 The wrapper deliberately does not set Content-Type. fetch generates a multipart/form-data header containing a unique boundary that matches the encoded body. Manually setting only multipart/form-data would omit that boundary and prevent Hono from parsing the fields correctly.
 
 The upload response contains documentId, jobId, and the initial job status. Upload acceptance does not mean ingestion is finished; the worker processes the returned job in the background.
+
+Phase 3 upload Server Action
+============================
+
+Added uploadDocumentAction(previousState, formData) in web/src/app/documents/actions.ts. This is the Next server-side bridge between the future browser upload form and the frontend upload API wrapper.
+
+The action reads file and optional title from FormData, then validates that the file exists, is non-empty, reports application/pdf, and is no larger than 20 MiB. The backend still repeats its own validation, including checking the actual %PDF- signature. Frontend or Server Action validation improves feedback but is never a replacement for backend validation.
+
+After validation, the action calls uploadDocument(file, title). On success it returns documentId, jobId, and initial status. ApiError failures become an error string in action state instead of throwing an error page. Unexpected failures are logged server-side and return a safe generic message.
+
+The action does not call ingestion.ts directly. Its path is:
+
+```text
+browser form
+-> Next Server Action
+-> frontend uploadDocument() API wrapper
+-> Hono POST /documents
+-> file storage + document row + pending job
+-> background worker performs ingestion later
+```
