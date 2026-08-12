@@ -107,3 +107,12 @@ any other error     -> rethrow to documents/error.tsx
 Missing documents and documents owned by another user intentionally produce the same not-found UI. Network, database, and backend 500 failures are not changed into 404s because that would hide a real outage behind a misleading Document not found message.
 
 Only the document lookup and top-bar metadata are real at this checkpoint. The paper pane and example chat inside the workspace are still hard-coded presentation and must be removed or replaced in the next step.
+
+Phase 2 hard-coded paper removal
+================================
+
+Removed the fabricated paper title, authors, sections, paragraphs, citation highlight, fake page navigation, and fixed 1 / 4 page indicator from the workspace.
+
+The left pane now shows an explicit PDF viewer coming next state using only truthful backend data: the real filename and current pageCount value. It also explains that the original PDF is stored and indexed but rendering pages and jumping to cited passages belong to the viewer phase.
+
+The example chat pane is intentionally unchanged in this step. It remains hard-coded and should be replaced when the real query UI and SSE reader are connected.

@@ -25,151 +25,30 @@ async function loadDocument(documentId: string): Promise<DocumentResponse> {
 
 /* ── paper pane ─────────────────────────────────────────────── */
 
-function PaperPage({
-  pageNumber,
-  stamp,
-  children,
-}: {
-  pageNumber: number;
-  stamp?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <article className="relative mx-auto my-[26px] max-w-[640px] rounded-[2px] border border-rule bg-page px-[58px] pt-[54px] pb-[60px] shadow-[0_26px_64px_-34px_rgba(0,0,0,0.95)]">
-      {stamp && (
-        <span className="absolute top-[54px] -left-px rotate-180 font-mono text-[9.5px] tracking-[0.1em] text-graphite-dim [writing-mode:vertical-rl]">
-          {stamp}
-        </span>
-      )}
-      {children}
-      <div className="absolute right-0 bottom-[22px] left-0 text-center font-mono text-[10.5px] text-graphite-dim">
-        {pageNumber}
-      </div>
-    </article>
-  );
-}
-
-function Body({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="mb-[13px] font-serif text-[14.5px] leading-[1.74] text-read">
-      {children}
-    </p>
-  );
-}
-
-function Heading({
-  number,
-  children,
-}: {
-  number: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <h2 className="mt-[26px] mb-[9px] font-serif text-[15.5px] font-semibold tracking-[0.005em]">
-      <span className="mr-[9px] font-mono text-[12px] text-graphite-dim">
-        {number}
-      </span>
-      {children}
-    </h2>
-  );
-}
-
-function PaperPane() {
+function PaperPane({ document }: { document: DocumentResponse }) {
   return (
     <section
       aria-label="Document"
-      className="grid min-h-0 lg:grid-rows-[minmax(0,1fr)_42px]"
+      className="flex min-h-[420px] items-center justify-center px-6 py-12"
     >
-      <div className="px-5 lg:overflow-y-auto">
-        <PaperPage pageNumber={1} stamp="joint-pruning-quantization.pdf">
-          <h1 className="mb-4 font-serif text-[25px] leading-[1.24] font-semibold tracking-[-0.012em]">
-            Joint Pruning and Quantization at Scale
-          </h1>
-          <p className="mb-[3px] font-serif text-[14px] text-read">
-            A. Researcher, B. Collaborator, C. Advisor
-          </p>
-          <p className="mb-[26px] font-serif text-[13px] text-graphite italic">
-            Institute for Efficient Computation
-          </p>
-
-          <div className="mb-2 font-mono text-[10px] tracking-[0.16em] text-graphite-dim uppercase">
-            Abstract
+      <div className="w-full max-w-[520px] rounded-[4px] border border-dashed border-rule-strong px-8 py-14 text-center">
+        <div className="font-mono text-[10.5px] tracking-[0.14em] text-graphite-dim uppercase">
+          Document viewer
+        </div>
+        <h1 className="mt-4 font-serif text-[30px] leading-[1.1] font-semibold tracking-[-0.02em]">
+          PDF viewer coming next.
+        </h1>
+        <p className="mx-auto mt-3 max-w-[42ch] font-serif text-[14.5px] leading-[1.66] text-graphite">
+          The real file is safely stored and indexed. Rendering pages and
+          jumping to cited passages will be connected in the viewer phase.
+        </p>
+        <div className="mt-6 font-mono text-[10.5px] leading-[1.7] text-graphite-dim">
+          <div className="truncate text-graphite">{document.filename}</div>
+          <div>
+            {document.pageCount} {document.pageCount === 1 ? "page" : "pages"}
           </div>
-          {/* This paragraph carries the amber margin rule + wash that marks a
-              cited passage — the resting look the login animation builds up to. */}
-          <div className="relative bg-marker-wash">
-            <span className="absolute top-[0.3em] bottom-[0.3em] -left-[26px] w-[2px] bg-marker-line opacity-50" />
-            <Body>
-              We study whether sparsity and quantization should be optimized
-              jointly rather than in sequence. Across seven model scales we find
-              the benefit of joint optimization is monotonically decreasing in
-              model size, crossing zero between 1.4B and 2.8B parameters.
-            </Body>
-          </div>
-
-          <Heading number="1">Introduction</Heading>
-          <Body>
-            Compressing a trained network usually proceeds in stages: prune to a
-            target sparsity, then quantize whatever survives. Each stage is well
-            understood in isolation, and treating them independently keeps the
-            search space small.
-          </Body>
-          <Body>
-            That decomposition is convenient rather than principled. The mask
-            chosen during pruning fixes which weights the quantizer must later
-            represent, so an early decision constrains a later one without ever
-            accounting for it.
-          </Body>
-
-          <Heading number="2">Related work</Heading>
-          <Body>
-            Magnitude pruning with layer-wise calibration remains the strongest
-            simple baseline, and post-training quantization methods recover most
-            of the accuracy lost at four bits.
-          </Body>
-        </PaperPage>
-
-        <PaperPage pageNumber={2}>
-          <Heading number="3.1">Joint objective</Heading>
-          <Body>
-            The sparsity mask and the quantization scale are optimized together
-            against a shared calibration set, instead of fixing the mask first
-            and quantizing whatever remains.
-          </Body>
-          <Body>
-            Because the mask is discrete, it is relaxed during optimization with
-            a straight-through estimator and the temperature annealed over five
-            hundred steps before a hard mask is recovered.
-          </Body>
-
-          <Heading number="3.2">Sequential baseline</Heading>
-          <Body>
-            The comparison point is deliberately strong: magnitude pruning with
-            layer-wise calibration, followed by four-bit quantization over one
-            hundred and twenty-eight calibration sequences.
-          </Body>
-        </PaperPage>
+        </div>
       </div>
-
-      <footer className="hidden items-center justify-center gap-3.5 border-t border-rule bg-chrome lg:flex">
-        <button
-          type="button"
-          className="grid h-6 w-[26px] cursor-pointer place-items-center rounded-[3px] text-graphite transition-colors hover:bg-raise hover:text-bone"
-          aria-label="Previous page"
-        >
-          ‹
-        </button>
-        <span className="font-mono text-[11.5px] text-graphite">
-          <b className="font-medium text-bone">1</b> / 4
-        </span>
-        <button
-          type="button"
-          className="grid h-6 w-[26px] cursor-pointer place-items-center rounded-[3px] text-graphite transition-colors hover:bg-raise hover:text-bone"
-          aria-label="Next page"
-        >
-          ›
-        </button>
-      </footer>
     </section>
   );
 }
@@ -325,7 +204,7 @@ export default async function WorkspacePage(
       </TopBar>
 
       <div className="flex flex-1 flex-col lg:grid lg:min-h-0 lg:grid-cols-[minmax(0,1.12fr)_minmax(0,0.88fr)]">
-        <PaperPane />
+        <PaperPane document={document} />
         <ChatPane />
       </div>
     </div>
