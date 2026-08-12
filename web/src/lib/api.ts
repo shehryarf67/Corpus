@@ -35,6 +35,8 @@ export type DocumentResponse = {
   filename: string;
   mimeType: string;
   uploadedAt: string;
+  jobId: string | null;
+  jobCreatedAt: string | null;
   status: DocumentJobStatus | null;
   error: string | null;
   chunkCount: number;

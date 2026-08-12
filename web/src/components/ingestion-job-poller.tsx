@@ -25,6 +25,10 @@ type WatchedJob = {
 
 type WatchJobInput = Pick<WatchedJob, "jobId" | "documentId" | "status">;
 
+export type InitialWatchedJob = WatchJobInput & {
+  startedAt: number;
+};
+
 export type OptimisticDocument = {
   localId: string;
   documentId: string | null;
@@ -53,9 +57,15 @@ type JobPollingContextValue = {
 
 const JobPollingContext = createContext<JobPollingContextValue | null>(null);
 
-export function IngestionJobPollingProvider({ children }: { children: ReactNode }) {
+export function IngestionJobPollingProvider({
+  children,
+  initialJobs,
+}: {
+  children: ReactNode;
+  initialJobs: InitialWatchedJob[];
+}) {
   const router = useRouter();
-  const [jobs, setJobs] = useState<WatchedJob[]>([]);
+  const [jobs, setJobs] = useState<WatchedJob[]>(initialJobs);
   const [optimisticDocuments, setOptimisticDocuments] = useState<
     OptimisticDocument[]
   >([]);

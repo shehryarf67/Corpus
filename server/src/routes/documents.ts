@@ -22,6 +22,8 @@ export type DocumentResponse = {
   filename: string
   mimeType: string
   uploadedAt: string
+  jobId: string | null
+  jobCreatedAt: string | null
   status: JobStatus | null
   error: string | null
   chunkCount: number
@@ -43,6 +45,8 @@ function publicDocument(document: DocumentListRow): DocumentResponse {
     filename: document.filename,
     mimeType: document.mime_type,
     uploadedAt: document.uploaded_at,
+    jobId: document.latest_job_id,
+    jobCreatedAt: document.latest_job_created_at,
     status: document.latest_job_status,
     error: document.latest_job_error,
     chunkCount: document.chunk_count,

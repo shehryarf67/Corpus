@@ -83,7 +83,15 @@ export async function getJobStatusAction(
   try {
     // Keep the HttpOnly cookie on the server: getJob() forwards it to Hono's
     // authenticated GET /jobs/:jobId endpoint on behalf of the Client Component.
-    return { job: await getJob(jobId), error: null };
+    const job = await getJob(jobId);
+
+    // Make the terminal refresh fetch a newly rendered document card even if
+    // this poll crossed a Next route-cache boundary.
+    if (job.status === "done" || job.status === "failed") {
+      revalidatePath("/documents");
+    }
+
+    return { job, error: null };
   } catch (error) {
     if (error instanceof ApiError) {
       return { job: null, error: error.message };

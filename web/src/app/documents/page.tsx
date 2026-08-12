@@ -197,8 +197,38 @@ export default async function DocumentsPage() {
     0,
   );
   const realDocumentIds = documents.map((document) => document.id);
+  const initialJobs = documents.flatMap((document) => {
+    const isActive =
+      document.status === "pending" ||
+      document.status === "parsing" ||
+      document.status === "embedding";
+
+    if (
+      !isActive ||
+      !document.jobId ||
+      !document.jobCreatedAt ||
+      !document.status
+    ) {
+      return [];
+    }
+
+    const parsedStartedAt = Date.parse(document.jobCreatedAt);
+    const uploadedAt = Date.parse(document.uploadedAt);
+
+    return [
+      {
+        jobId: document.jobId,
+        documentId: document.id,
+        status: document.status,
+        startedAt: Number.isFinite(parsedStartedAt) ? parsedStartedAt : uploadedAt,
+      },
+    ];
+  });
+  const pollingKey = initialJobs
+    .map((job) => `${job.jobId}:${job.status}`)
+    .join("|");
   return (
-    <IngestionJobPollingProvider>
+    <IngestionJobPollingProvider key={pollingKey} initialJobs={initialJobs}>
       <div className="flex min-h-[100dvh] flex-col">
         <TopBar />
 

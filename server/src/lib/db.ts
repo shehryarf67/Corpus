@@ -310,8 +310,10 @@ export type DocumentRow = {
 // This projection adds the values the document UI needs. The names stay
 // snake_case because this is still a PostgreSQL result, not an HTTP response.
 export type DocumentListRow = DocumentRow & {
+  latest_job_id: string | null
   latest_job_status: JobStatus | null
   latest_job_error: string | null
+  latest_job_created_at: string | null
   chunk_count: number
   page_count: number
 }
@@ -548,13 +550,15 @@ export const Documents = {
     const { rows } = await pool.query<DocumentListRow>(
       `SELECT
          documents.*,
+         latest_job.id AS latest_job_id,
          latest_job.status AS latest_job_status,
          latest_job.error AS latest_job_error,
+         latest_job.created_at AS latest_job_created_at,
          COALESCE(chunk_stats.chunk_count, 0) AS chunk_count,
          COALESCE(chunk_stats.page_count, 0) AS page_count
        FROM documents
        LEFT JOIN LATERAL (
-         SELECT jobs.status, jobs.error
+         SELECT jobs.id, jobs.status, jobs.error, jobs.created_at
          FROM jobs
          WHERE jobs.document_id = documents.id
          ORDER BY jobs.created_at DESC, jobs.id DESC
@@ -578,13 +582,15 @@ export const Documents = {
     const { rows } = await pool.query<DocumentListRow>(
       `SELECT
          documents.*,
+         latest_job.id AS latest_job_id,
          latest_job.status AS latest_job_status,
          latest_job.error AS latest_job_error,
+         latest_job.created_at AS latest_job_created_at,
          COALESCE(chunk_stats.chunk_count, 0) AS chunk_count,
          COALESCE(chunk_stats.page_count, 0) AS page_count
        FROM documents
        LEFT JOIN LATERAL (
-         SELECT jobs.status, jobs.error
+         SELECT jobs.id, jobs.status, jobs.error, jobs.created_at
          FROM jobs
          WHERE jobs.document_id = documents.id
          ORDER BY jobs.created_at DESC, jobs.id DESC

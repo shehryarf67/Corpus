@@ -87,10 +87,13 @@ test('document list and detail return owned aggregate data and the latest job', 
     ])
 
     const repositoryList = await Documents.listForUser(owner.id)
+    const updatedLatestJob = await Jobs.getById(latestJob.id)
+    if (!updatedLatestJob) throw new Error('Latest job disappeared during test')
     assert.equal(repositoryList.length, 1)
     assert.equal(repositoryList[0]?.id, ownedDocument.id)
     assert.equal(repositoryList[0]?.chunk_count, 3)
     assert.equal(repositoryList[0]?.page_count, 3)
+    assert.equal(repositoryList[0]?.latest_job_id, latestJob.id)
     assert.equal(repositoryList[0]?.latest_job_status, 'done')
     assert.equal(repositoryList[0]?.latest_job_error, null)
 
@@ -115,7 +118,9 @@ test('document list and detail return owned aggregate data and the latest job', 
       title: ownedDocument.title,
       filename: ownedDocument.filename,
       mimeType: ownedDocument.mime_type,
-      uploadedAt: ownedDocument.uploaded_at,
+      uploadedAt: new Date(ownedDocument.uploaded_at).toISOString(),
+      jobId: latestJob.id,
+      jobCreatedAt: new Date(updatedLatestJob.created_at).toISOString(),
       status: 'done',
       error: null,
       chunkCount: 3,

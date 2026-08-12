@@ -207,3 +207,12 @@ When Hono accepts the PDF, UploadDialog adds the real documentId, jobId, and pen
 If upload validation or the backend request fails, the temporary card is removed and the error remains in the upload dialog. Later parsing, embedding, completion, and failure states come from the real backend document rather than guessed client data.
 
 This does not render the PDF's first page. PagePreview remains a deterministic placeholder until a separate authenticated PDF or thumbnail endpoint and viewer are implemented.
+
+Phase 3 polling recovery after refresh
+======================================
+
+The initial per-job poller depended on jobId held only in Client Component state. A router.refresh() could recreate that part of the route and lose the watched job, leaving the real card on its last indexing status until a manual refresh.
+
+Document list/detail responses now include the latest jobId and jobCreatedAt. The library seeds its poller from every real document whose latest job is pending, parsing, or embedding. Polling therefore survives Server Component refreshes and full page reloads. The persisted job creation time also keeps the ten-minute timeout meaningful after a remount instead of restarting the timeout clock.
+
+When GET /jobs/:jobId reaches done or failed, the polling Server Action revalidates /documents and the client refreshes it. The resulting real database document supplies the final status, chunk count, page count, and error without a manual browser refresh.
