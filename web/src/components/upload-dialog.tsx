@@ -37,9 +37,15 @@ function validateFile(file: File | undefined): string | null {
 
 export function UploadDialog() {
   const router = useRouter();
-  const { watchJob } = useIngestionJobPolling();
+  const {
+    watchJob,
+    beginOptimisticDocument,
+    acceptOptimisticDocument,
+    removeOptimisticDocument,
+  } = useIngestionJobPolling();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const optimisticIdRef = useRef<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [clientError, setClientError] = useState<string | null>(null);
   const [hideActionError, setHideActionError] = useState(false);
@@ -50,7 +56,29 @@ export function UploadDialog() {
   );
 
   useEffect(() => {
-    if (!state.documentId || !state.jobId || !state.status) return;
+    const optimisticId = optimisticIdRef.current;
+
+    if (state.error && optimisticId) {
+      removeOptimisticDocument(optimisticId);
+      optimisticIdRef.current = null;
+      return;
+    }
+
+    if (
+      !optimisticId ||
+      !state.documentId ||
+      !state.jobId ||
+      !state.status
+    ) {
+      return;
+    }
+
+    acceptOptimisticDocument(optimisticId, {
+      jobId: state.jobId,
+      documentId: state.documentId,
+      status: state.status,
+    });
+    optimisticIdRef.current = null;
 
     // The provider lives above the changing empty/list page content, so it can
     // keep polling even after this dialog closes or unmounts.
@@ -64,7 +92,16 @@ export function UploadDialog() {
     // Server Component so the real document appears in the library.
     dialogRef.current?.close();
     router.refresh();
-  }, [router, state.documentId, state.jobId, state.status, watchJob]);
+  }, [
+    acceptOptimisticDocument,
+    removeOptimisticDocument,
+    router,
+    state.documentId,
+    state.error,
+    state.jobId,
+    state.status,
+    watchJob,
+  ]);
 
   function chooseFile(file: File | undefined) {
     const error = validateFile(file);
@@ -104,7 +141,27 @@ export function UploadDialog() {
 
     // Client validation prevents the request. The Server Action and Hono
     // still repeat validation because browser values can be bypassed.
-    if (error) event.preventDefault();
+    if (error) {
+      event.preventDefault();
+      return;
+    }
+
+    // This temporary card appears before the upload request finishes. It has
+    // only browser-known data; the backend document replaces it after success.
+    if (file && !optimisticIdRef.current) {
+      const titleValue = new FormData(event.currentTarget).get("title");
+      const suppliedTitle =
+        typeof titleValue === "string" ? titleValue.trim() : "";
+      const filenameTitle = file.name.replace(/\.pdf$/i, "").trim();
+      const localId = window.crypto.randomUUID();
+
+      optimisticIdRef.current = localId;
+      beginOptimisticDocument({
+        localId,
+        filename: file.name,
+        title: suppliedTitle || filenameTitle || "Untitled document",
+      });
+    }
   }
 
   const displayedError = clientError ?? (!hideActionError ? state.error : null);

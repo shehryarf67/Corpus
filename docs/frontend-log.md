@@ -196,3 +196,14 @@ Added POST /documents/:documentId/retry. The repository transaction locks the ow
 Failed cards now show Retry indexing. The frontend Server Action calls the retry API, refreshes the library, and registers the returned jobId with the existing poller. The card therefore changes back to pending and follows the new job through parsing, embedding, and its final done or failed status.
 
 Old failed job rows remain as attempt history. Only potentially partial chunks are cleared because the replacement worker must insert a clean set with the same document chunk indexes.
+
+Phase 3 optimistic upload card
+==============================
+
+A valid form submission now creates a temporary document card immediately, before the upload request finishes. This card contains only values the browser already knows: a local temporary ID, the filename, the supplied or filename-derived title, and uploading status. It does not pretend to know a database ID, chunk count, or page count.
+
+When Hono accepts the PDF, UploadDialog adds the real documentId, jobId, and pending status to the temporary entry and registers that job for polling. The library is then refreshed. As soon as GET /documents includes that document ID, the optimistic card is removed and the real database-backed card takes its place.
+
+If upload validation or the backend request fails, the temporary card is removed and the error remains in the upload dialog. Later parsing, embedding, completion, and failure states come from the real backend document rather than guessed client data.
+
+This does not render the PDF's first page. PagePreview remains a deterministic placeholder until a separate authenticated PDF or thumbnail endpoint and viewer are implemented.

@@ -25,8 +25,30 @@ type WatchedJob = {
 
 type WatchJobInput = Pick<WatchedJob, "jobId" | "documentId" | "status">;
 
+export type OptimisticDocument = {
+  localId: string;
+  documentId: string | null;
+  jobId: string | null;
+  title: string;
+  filename: string;
+  status: "uploading" | DocumentJobStatus;
+};
+
+type BeginOptimisticDocumentInput = Pick<
+  OptimisticDocument,
+  "localId" | "title" | "filename"
+>;
+
 type JobPollingContextValue = {
   watchJob: (job: WatchJobInput) => void;
+  optimisticDocuments: OptimisticDocument[];
+  beginOptimisticDocument: (document: BeginOptimisticDocumentInput) => void;
+  acceptOptimisticDocument: (
+    localId: string,
+    result: WatchJobInput,
+  ) => void;
+  removeOptimisticDocument: (localId: string) => void;
+  reconcileRealDocuments: (documentIds: string[]) => void;
 };
 
 const JobPollingContext = createContext<JobPollingContextValue | null>(null);
@@ -34,6 +56,9 @@ const JobPollingContext = createContext<JobPollingContextValue | null>(null);
 export function IngestionJobPollingProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [jobs, setJobs] = useState<WatchedJob[]>([]);
+  const [optimisticDocuments, setOptimisticDocuments] = useState<
+    OptimisticDocument[]
+  >([]);
   const [notice, setNotice] = useState<string | null>(null);
   const pollInProgress = useRef(false);
 
@@ -45,6 +70,57 @@ export function IngestionJobPollingProvider({ children }: { children: ReactNode 
       }
 
       return [...currentJobs, { ...job, startedAt: Date.now() }];
+    });
+  }, []);
+
+  const beginOptimisticDocument = useCallback(
+    (document: BeginOptimisticDocumentInput) => {
+      setOptimisticDocuments((currentDocuments) => [
+        ...currentDocuments,
+        {
+          ...document,
+          documentId: null,
+          jobId: null,
+          status: "uploading",
+        },
+      ]);
+    },
+    [],
+  );
+
+  const acceptOptimisticDocument = useCallback(
+    (localId: string, result: WatchJobInput) => {
+      setOptimisticDocuments((currentDocuments) =>
+        currentDocuments.map((document) =>
+          document.localId === localId
+            ? {
+                ...document,
+                documentId: result.documentId,
+                jobId: result.jobId,
+                status: result.status,
+              }
+            : document,
+        ),
+      );
+    },
+    [],
+  );
+
+  const removeOptimisticDocument = useCallback((localId: string) => {
+    setOptimisticDocuments((currentDocuments) =>
+      currentDocuments.filter((document) => document.localId !== localId),
+    );
+  }, []);
+
+  const reconcileRealDocuments = useCallback((documentIds: string[]) => {
+    const realIds = new Set(documentIds);
+    setOptimisticDocuments((currentDocuments) => {
+      const nextDocuments = currentDocuments.filter(
+        (document) => !document.documentId || !realIds.has(document.documentId),
+      );
+      return nextDocuments.length === currentDocuments.length
+        ? currentDocuments
+        : nextDocuments;
     });
   }, []);
 
@@ -110,6 +186,20 @@ export function IngestionJobPollingProvider({ children }: { children: ReactNode 
           }
         }
 
+        // Keep a temporary card current if the real document-list refresh has
+        // not replaced it yet.
+        setOptimisticDocuments((currentDocuments) => {
+          let changed = false;
+          const nextDocuments = currentDocuments.map((document) => {
+            if (!document.jobId) return document;
+            const nextStatus = latestStatuses.get(document.jobId);
+            if (!nextStatus || nextStatus === document.status) return document;
+            changed = true;
+            return { ...document, status: nextStatus };
+          });
+          return changed ? nextDocuments : currentDocuments;
+        });
+
         setJobs((currentJobs) => {
           let changed = false;
           const nextJobs: WatchedJob[] = [];
@@ -154,7 +244,16 @@ export function IngestionJobPollingProvider({ children }: { children: ReactNode 
   }, [jobs, router]);
 
   return (
-    <JobPollingContext.Provider value={{ watchJob }}>
+    <JobPollingContext.Provider
+      value={{
+        watchJob,
+        optimisticDocuments,
+        beginOptimisticDocument,
+        acceptOptimisticDocument,
+        removeOptimisticDocument,
+        reconcileRealDocuments,
+      }}
+    >
       {children}
       {notice && (
         <div

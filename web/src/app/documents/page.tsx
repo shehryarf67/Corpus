@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { IngestionJobPollingProvider } from "@/components/ingestion-job-poller";
+import { OptimisticDocumentCards } from "@/components/optimistic-document-cards";
 import { PagePreview } from "@/components/page-preview";
 import { RetryDocumentButton } from "@/components/retry-document-button";
 import { TopBar } from "@/components/top-bar";
@@ -172,6 +173,9 @@ function EmptyState() {
         <div className="mt-7 flex justify-center">
           <UploadDialog />
         </div>
+        <ul className="mx-auto mt-8 grid max-w-[220px] grid-cols-1 text-left empty:hidden">
+          <OptimisticDocumentCards realDocumentIds={[]} />
+        </ul>
         <p className="mt-4 font-mono text-[10px] tracking-[0.03em] text-graphite-dim">
           pdf only · indexing runs in the background
         </p>
@@ -192,6 +196,7 @@ export default async function DocumentsPage() {
       total + (document.status === "done" ? document.chunkCount : 0),
     0,
   );
+  const realDocumentIds = documents.map((document) => document.id);
   return (
     <IngestionJobPollingProvider>
       <div className="flex min-h-[100dvh] flex-col">
@@ -222,6 +227,7 @@ export default async function DocumentsPage() {
           {/* Three across at the widest: with a handful of documents that
               leaves fewer orphaned cards on the last row than four would. */}
           <ul className="grid grid-cols-1 gap-x-6 gap-y-9 sm:grid-cols-2 lg:grid-cols-3">
+            <OptimisticDocumentCards realDocumentIds={realDocumentIds} />
             {documents.map((document) => (
               <DocumentCard key={document.id} document={document} />
             ))}
