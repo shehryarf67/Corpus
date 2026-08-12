@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PagePreview } from "@/components/page-preview";
 import { TopBar } from "@/components/top-bar";
+import { UploadDialog } from "@/components/upload-dialog";
 import {
   getDocuments,
   type DocumentJobStatus,
@@ -149,17 +150,6 @@ function DocumentCard({ document }: { document: DocumentResponse }) {
   );
 }
 
-function UploadButton() {
-  return (
-    <button
-      type="button"
-      className="shrink-0 cursor-pointer rounded-[3px] bg-marker px-4 py-2.5 text-[13px] font-semibold text-[#171004] transition hover:brightness-[1.08] active:translate-y-px"
-    >
-      Upload a PDF
-    </button>
-  );
-}
-
 function EmptyState() {
   return (
     <div className="flex flex-1 items-center justify-center px-6 py-16">
@@ -176,7 +166,7 @@ function EmptyState() {
           every answer can point back to the page it came from.
         </p>
         <div className="mt-7 flex justify-center">
-          <UploadButton />
+          <UploadDialog />
         </div>
         <p className="mt-4 font-mono text-[10px] tracking-[0.03em] text-graphite-dim">
           pdf only · indexing runs in the background
@@ -222,7 +212,7 @@ export default async function DocumentsPage() {
               </p>
             </div>
             {/* Anchored in the header so it stays put as the list grows. */}
-            <UploadButton />
+            <UploadDialog key={documents.length} />
           </div>
 
           {/* Three across at the widest: with a handful of documents that

@@ -154,3 +154,16 @@ browser form
 -> file storage + document row + pending job
 -> background worker performs ingestion later
 ```
+
+Phase 3 upload UI and client validation
+=======================================
+
+Added UploadDialog and connected both Upload a PDF buttons on the library page. It uses a native dialog with a file picker/drop zone, optional title field, Cancel button, and Upload and index submit button.
+
+The browser immediately validates that a file was selected, is non-empty, has a .pdf name and application/pdf MIME type, and is no larger than 20 MiB. Invalid selections show a useful message before any request is sent. The input accept attribute improves the picker filter but is only a hint, so the Client Component, Server Action, and Hono/storage layers all validate again.
+
+The form uses useActionState(uploadDocumentAction, initialState). While the action runs, inputs and closing controls are disabled and the submit label becomes Uploading. Server Action or Hono errors are shown in the same live error area.
+
+For drag and drop, the dropped File is copied into the real file input with DataTransfer. This matters because the browser builds submitted FormData from actual form controls; keeping a File only in React state would not include it in the Server Action request.
+
+After Hono accepts the upload and returns documentId/jobId/status, the dialog closes and router.refresh() reloads the no-store document list. The new document appears with its real pending/indexing status while the worker continues in the background.
