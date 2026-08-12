@@ -169,7 +169,6 @@ export function IngestionJobPollingProvider({
 
         if (disposed) return;
 
-        const finishedIds = new Set<string>();
         const latestStatuses = new Map<string, DocumentJobStatus>();
         let shouldRefresh = timedOutIds.size > 0;
 
@@ -183,7 +182,6 @@ export function IngestionJobPollingProvider({
           }
 
           if (result.job.status === "done" || result.job.status === "failed") {
-            finishedIds.add(watchedJob.jobId);
             shouldRefresh = true;
 
             if (result.job.status === "failed") {
@@ -215,7 +213,7 @@ export function IngestionJobPollingProvider({
           const nextJobs: WatchedJob[] = [];
 
           for (const job of currentJobs) {
-            if (timedOutIds.has(job.jobId) || finishedIds.has(job.jobId)) {
+            if (timedOutIds.has(job.jobId)) {
               changed = true;
               continue;
             }
@@ -234,8 +232,11 @@ export function IngestionJobPollingProvider({
           return changed ? nextJobs : currentJobs;
         });
 
-        // Status changes and terminal states are loaded from the real backend
-        // document response, replacing any status previously shown by the UI.
+        // Keep terminal jobs in this polling list until router.refresh() has
+        // actually committed a document response that no longer seeds them.
+        // If Next deduplicates one refresh against an earlier in-flight
+        // refresh, the next interval tries again instead of getting stuck on
+        // the final indexing card forever.
         if (shouldRefresh) router.refresh();
       } finally {
         pollInProgress.current = false;

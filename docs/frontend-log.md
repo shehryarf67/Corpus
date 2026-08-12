@@ -232,3 +232,10 @@ Refreshing an active job after its ten-minute polling limit previously reconstru
 The document list/detail query now calculates latest_job_is_long_running when the latest job is still pending, parsing, or embedding and was created at least ten minutes ago. The public response exposes this as processingLongerThanExpected without changing the real job status or inventing a failure.
 
 The library does not register these long-running jobs with the automatic poller. Their cards permanently show processing is taking longer than expected until a later manual refresh finds that the backend worker has changed the job to done or failed. This stops repeated timeout polling while keeping PostgreSQL as the source of truth.
+
+Phase 3 terminal refresh race
+=============================
+
+The first terminal-status implementation removed a watched job as soon as GET /jobs/:jobId returned done or failed, then called router.refresh(). If Next deduplicated that refresh against an earlier in-flight status refresh, the card could remain on indexing with no watched job left to request another refresh.
+
+Done and failed jobs now remain in the client polling list until a refreshed GET /documents response confirms the terminal state by no longer seeding that job as active. While confirmation is pending, each interval retries router.refresh(). Once the real document response arrives, the provider key changes, the terminal job disappears, and polling stops. This makes the final card replacement resilient without requiring a manual refresh.
