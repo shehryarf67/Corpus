@@ -1,8 +1,8 @@
 /**
  * Stand-in for a rendered first page.
  *
- * There are no stored PDFs to rasterise yet, so this draws a page-shaped SVG
- * whose text lines are derived from the document id. That keeps every card
+ * PDFs are stored, but there is no thumbnail/raster endpoint yet. This draws a
+ * page-shaped SVG whose lines derive from the document id. That keeps every card
  * visually distinct but perfectly stable between server and client renders —
  * no `Math.random()`, so nothing to mismatch on hydration.
  *

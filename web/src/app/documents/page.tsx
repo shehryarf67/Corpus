@@ -2,23 +2,23 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PagePreview } from "@/components/page-preview";
 import { TopBar } from "@/components/top-bar";
-import { formatRelativeTime } from "@/lib/format";
 import {
-  MOCK_DOCUMENTS,
-  type DocumentStatus,
-  type MockDocument,
-} from "@/lib/mock-documents";
+  getDocuments,
+  type DocumentJobStatus,
+  type DocumentResponse,
+} from "@/lib/api";
+import { formatRelativeTime } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Documents · Corpus",
 };
 
 /** Amber only ever means "ready" — the same rule the rest of the UI follows. */
-function StatusDot({ status }: { status: DocumentStatus }) {
-  if (status === "ready") {
+function StatusDot({ status }: { status: DocumentJobStatus | null }) {
+  if (status === "done") {
     return <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-marker" />;
   }
-  if (status === "indexing") {
+  if (status !== "failed") {
     return (
       <span className="h-[5px] w-[5px] shrink-0 animate-pulse rounded-full bg-graphite" />
     );
@@ -28,9 +28,15 @@ function StatusDot({ status }: { status: DocumentStatus }) {
   );
 }
 
-function statusLine(document: MockDocument) {
-  if (document.status === "indexing") return "indexing…";
+function statusLine(document: DocumentResponse) {
   if (document.status === "failed") return "couldn't be indexed";
+
+  if (document.status === "pending" || document.status === null) {
+    return "waiting to index...";
+  }
+  if (document.status === "parsing") return "reading PDF...";
+  if (document.status === "embedding") return "building search index...";
+
   return `indexed · ${document.chunkCount.toLocaleString("en-US")} chunks · ${document.pageCount} pages`;
 }
 
@@ -38,16 +44,10 @@ function statusLine(document: MockDocument) {
  * How much this document has actually been used — the signal that tells a
  * library apart from a plain file listing.
  */
-function activityLine(document: MockDocument): string {
-  if (document.status !== "ready") return `added ${document.uploadedAt}`;
-
-  if (document.questionCount === 0) return "no questions yet";
-
-  const label = document.questionCount === 1 ? "question" : "questions";
-  const asked = document.lastAskedAt
-    ? ` · last asked ${formatRelativeTime(document.lastAskedAt)}`
-    : "";
-  return `${document.questionCount} ${label}${asked}`;
+function activityLine(document: DocumentResponse): string {
+  // Question activity is not in the real contract yet. Show truthful upload
+  // data instead of carrying the mock question counts into production UI.
+  return `added ${formatRelativeTime(document.uploadedAt)}`;
 }
 
 /**
@@ -55,8 +55,8 @@ function activityLine(document: MockDocument): string {
  * there genuinely is no first page to show yet — faking one would imply the
  * document had been read when it hasn't.
  */
-function Thumbnail({ document }: { document: MockDocument }) {
-  const isReady = document.status === "ready";
+function Thumbnail({ document }: { document: DocumentResponse }) {
+  const isReady = document.status === "done";
 
   return (
     <div className="relative overflow-hidden rounded-[2px] border border-rule shadow-[0_18px_40px_-28px_rgba(0,0,0,0.95)] transition-colors group-hover:border-rule-strong">
@@ -65,7 +65,7 @@ function Thumbnail({ document }: { document: MockDocument }) {
       {!isReady && (
         <div className="absolute inset-0 grid place-items-center">
           <span className="font-mono text-[10.5px] tracking-[0.06em] text-graphite-dim">
-            {document.status === "indexing" ? "indexing…" : "no preview"}
+            {document.status === "failed" ? "no preview" : "indexing..."}
           </span>
         </div>
       )}
@@ -73,7 +73,7 @@ function Thumbnail({ document }: { document: MockDocument }) {
   );
 }
 
-function CardDetails({ document }: { document: MockDocument }) {
+function CardDetails({ document }: { document: DocumentResponse }) {
   const isFailed = document.status === "failed";
 
   return (
@@ -110,22 +110,12 @@ function CardDetails({ document }: { document: MockDocument }) {
         {activityLine(document)}
       </div>
 
-      {/* Safe as a real <button> because failed cards aren't wrapped in a
-          Link — a button inside an anchor would be invalid markup. */}
-      {isFailed && (
-        <button
-          type="button"
-          className="mt-3 cursor-pointer rounded-[3px] border border-rule-strong px-2.5 py-1 font-mono text-[10.5px] text-graphite transition-colors hover:border-marker-line hover:text-bone"
-        >
-          Retry
-        </button>
-      )}
     </div>
   );
 }
 
-function DocumentCard({ document }: { document: MockDocument }) {
-  const isReady = document.status === "ready";
+function DocumentCard({ document }: { document: DocumentResponse }) {
+  const isReady = document.status === "done";
 
   const body = (
     <>
@@ -142,7 +132,7 @@ function DocumentCard({ document }: { document: MockDocument }) {
   // Retry, and fading it out would bury exactly the card you should look at.
   if (!isReady) {
     const stateClass =
-      document.status === "indexing" ? "cursor-not-allowed opacity-60" : "";
+      document.status !== "failed" ? "cursor-not-allowed opacity-60" : "";
     return (
       <li>
         <div className={`group block ${stateClass}`}>{body}</div>
@@ -196,16 +186,16 @@ function EmptyState() {
   );
 }
 
-export default async function DocumentsPage(props: PageProps<"/documents">) {
-  // Dev affordance while there's no backend: /documents?state=empty renders
-  // the first-run screen. Remove once documents come from the API.
-  const { state } = await props.searchParams;
-  const documents = state === "empty" ? [] : MOCK_DOCUMENTS;
+export default async function DocumentsPage() {
+  // request<T>() forwards the HttpOnly session cookie to Hono, whose route
+  // returns only documents owned by the user established from that session.
+  const { documents } = await getDocuments();
 
   // Only ready documents contribute passages, so this counts what's actually
   // searchable rather than what's been uploaded.
   const indexedPassages = documents.reduce(
-    (total, document) => total + document.chunkCount,
+    (total, document) =>
+      total + (document.status === "done" ? document.chunkCount : 0),
     0,
   );
 

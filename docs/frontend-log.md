@@ -69,3 +69,24 @@ Added getDocuments() for GET /documents and getDocument(documentId) for GET /doc
 getDocument() URL-encodes the document ID before placing it in the path. A backend 404 is deliberately not converted here. The future detail page will catch ApiError with status 404 and call Next's notFound().
 
 These wrappers describe transport data only. They do not yet map backend job statuses into the library UI's temporary ready/indexing/failed labels, and the pages still use mock documents at this checkpoint.
+
+Phase 2 real document library
+=============================
+
+Replaced MOCK_DOCUMENTS on web/src/app/documents/page.tsx with getDocuments(). The authenticated Server Component now receives only documents returned for the current user by Hono.
+
+Backend job states map to the library presentation as follows:
+
+```text
+pending or no job -> waiting to index
+parsing           -> reading PDF
+embedding         -> building search index
+done              -> searchable card and document link
+failed            -> failure message and no document link
+```
+
+Only done documents contribute to the indexed-passage total. Only done documents link to their workspace because querying an unfinished document would have no complete search index.
+
+Removed the mock-only questionCount and lastAskedAt display. The real contract does not provide those fields yet, so cards truthfully show their relative upload time instead. Also removed the non-functional Retry button rather than presenting a fake operation.
+
+PagePreview remains a deterministic placeholder because PDFs are stored but no thumbnail endpoint exists yet. Document IDs, titles, filenames, job state, counts, errors, and timestamps now come from the real API.
