@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { IngestionJobPollingProvider } from "@/components/ingestion-job-poller";
 import { PagePreview } from "@/components/page-preview";
+import { RetryDocumentButton } from "@/components/retry-document-button";
 import { TopBar } from "@/components/top-bar";
 import { UploadDialog } from "@/components/upload-dialog";
 import {
@@ -111,6 +112,8 @@ function CardDetails({ document }: { document: DocumentResponse }) {
       <div className="mt-1.5 truncate font-mono text-[10.5px] text-graphite-dim">
         {activityLine(document)}
       </div>
+
+      {isFailed && <RetryDocumentButton documentId={document.id} />}
 
     </div>
   );

@@ -174,3 +174,13 @@ export function uploadDocument(
     // the unique boundary Hono needs in order to parse this FormData body.
   });
 }
+
+/** Queue a fresh ingestion attempt for an owned document whose latest job failed. */
+export function retryDocument(
+  documentId: string,
+): Promise<UploadDocumentResponse> {
+  return request<UploadDocumentResponse>(
+    `/documents/${encodeURIComponent(documentId)}/retry`,
+    { method: "POST" },
+  );
+}

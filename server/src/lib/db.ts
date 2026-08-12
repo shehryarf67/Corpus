@@ -351,6 +351,11 @@ export type Job = {
   updated_at: string
 }
 
+export type RetryFailedJobResult =
+  | { outcome: 'created'; job: Job }
+  | { outcome: 'not_found' }
+  | { outcome: 'not_failed' }
+
 // Jobs let uploads return quickly while PDF ingestion runs in the background.
 export const Jobs = {
   async create(documentId: string, type = 'ingest') {
@@ -420,6 +425,72 @@ export const Jobs = {
       [id, status, error]
     )
     return rows[0]
+  },
+
+  async retryFailedForUser(
+    documentId: string,
+    userId: string
+  ): Promise<RetryFailedJobResult> {
+    const client = await pool.connect()
+
+    try {
+      await client.query('BEGIN')
+
+      // Lock the owned document for the whole retry transaction. Two quick
+      // retry requests then run one after the other instead of creating two
+      // pending jobs for the same PDF.
+      const { rows: documents } = await client.query<{ id: string }>(
+        `SELECT id
+         FROM documents
+         WHERE id = $1
+           AND user_id = $2
+         FOR UPDATE`,
+        [documentId, userId]
+      )
+
+      if (!documents[0]) {
+        await client.query('ROLLBACK')
+        return { outcome: 'not_found' }
+      }
+
+      const { rows: latestJobs } = await client.query<Job>(
+        `SELECT *
+         FROM jobs
+         WHERE document_id = $1
+         ORDER BY created_at DESC, id DESC
+         LIMIT 1
+         FOR UPDATE`,
+        [documentId]
+      )
+
+      if (latestJobs[0]?.status !== 'failed') {
+        await client.query('ROLLBACK')
+        return { outcome: 'not_failed' }
+      }
+
+      // A failure could theoretically happen after chunks were inserted but
+      // before the job was marked done. Clear those rows so the retry cannot
+      // collide with UNIQUE (document_id, chunk_index) or use partial data.
+      await client.query('DELETE FROM chunks WHERE document_id = $1', [documentId])
+
+      const { rows } = await client.query<Job>(
+        `INSERT INTO jobs (document_id, type)
+         VALUES ($1, 'ingest')
+         RETURNING *`,
+        [documentId]
+      )
+
+      const job = rows[0]
+      if (!job) throw new Error('Database did not return the retry job')
+
+      await client.query('COMMIT')
+      return { outcome: 'created', job }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
   },
 }
 

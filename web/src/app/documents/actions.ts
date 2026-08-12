@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getJob, uploadDocument } from "@/lib/api";
+import { getJob, retryDocument, uploadDocument } from "@/lib/api";
 import { ApiError } from "@/lib/api-error";
 import type {
   JobStatusActionResult,
@@ -91,5 +91,28 @@ export async function getJobStatusAction(
 
     console.error(`job status check failed for ${jobId}`, error);
     return { job: null, error: "Could not check the ingestion status." };
+  }
+}
+
+export async function retryDocumentAction(
+  documentId: string,
+): Promise<UploadDocumentActionState> {
+  if (!documentId.trim()) return errorState("A document ID is required.");
+
+  try {
+    const result = await retryDocument(documentId);
+    revalidatePath("/documents");
+
+    return {
+      error: null,
+      documentId: result.documentId,
+      jobId: result.jobId,
+      status: result.status,
+    };
+  } catch (error) {
+    if (error instanceof ApiError) return errorState(error.message);
+
+    console.error(`document retry failed for ${documentId}`, error);
+    return errorState("The document could not be retried. Please try again.");
   }
 }

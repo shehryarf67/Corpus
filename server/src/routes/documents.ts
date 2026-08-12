@@ -93,6 +93,39 @@ documentsRoute.delete('/:documentId', async (c) => {
   return c.json({ ok: true })
 })
 
+documentsRoute.post('/:documentId/retry', async (c) => {
+  try {
+    const result = await Jobs.retryFailedForUser(
+      c.req.param('documentId'),
+      c.get('user').id
+    )
+
+    // Missing and foreign documents intentionally produce the same response.
+    if (result.outcome === 'not_found') {
+      return c.json({ error: 'Document not found' }, 404)
+    }
+
+    if (result.outcome === 'not_failed') {
+      return c.json({ error: 'Only failed documents can be retried' }, 409)
+    }
+
+    return c.json(
+      {
+        documentId: result.job.document_id,
+        jobId: result.job.id,
+        status: result.job.status,
+      },
+      202
+    )
+  } catch (error) {
+    console.error(
+      `could not retry document ${c.req.param('documentId')}`,
+      error
+    )
+    return c.json({ error: 'Could not retry document indexing' }, 500)
+  }
+})
+
 documentsRoute.post('/', async (c) => {
   let storageKey: string | null = null
   let documentId: string | null = null

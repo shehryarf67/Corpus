@@ -187,3 +187,12 @@ IngestionJobPollingProvider stays mounted above both the empty and populated lib
 Each active job is checked every two seconds. Changes through pending, parsing, and embedding refresh the Server Component so its card uses current backend data. Done and failed both trigger a final refresh and remove the job from polling. A failed response also shows the backend job error.
 
 Polling stops after ten minutes and tells the user to refresh later. This timeout stops only browser requests; it does not cancel the background ingestion worker. The interval is also cleared whenever the provider unmounts, preventing a timer leak after navigation.
+
+Phase 3 failed-ingestion retry
+================================
+
+Added POST /documents/:documentId/retry. The repository transaction locks the owned document, verifies that its latest job failed, removes any chunks left by a late failure, and creates one fresh pending ingestion job. The lock prevents repeated clicks from creating concurrent retry jobs. Foreign and missing documents both return 404, while a document whose latest job is not failed returns 409.
+
+Failed cards now show Retry indexing. The frontend Server Action calls the retry API, refreshes the library, and registers the returned jobId with the existing poller. The card therefore changes back to pending and follows the new job through parsing, embedding, and its final done or failed status.
+
+Old failed job rows remain as attempt history. Only potentially partial chunks are cleared because the replacement worker must insert a clean set with the same document chunk indexes.
