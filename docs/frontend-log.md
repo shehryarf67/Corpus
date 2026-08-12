@@ -90,3 +90,20 @@ Only done documents contribute to the indexed-passage total. Only done documents
 Removed the mock-only questionCount and lastAskedAt display. The real contract does not provide those fields yet, so cards truthfully show their relative upload time instead. Also removed the non-functional Retry button rather than presenting a fake operation.
 
 PagePreview remains a deterministic placeholder because PDFs are stored but no thumbnail endpoint exists yet. Document IDs, titles, filenames, job state, counts, errors, and timestamps now come from the real API.
+
+Phase 2 real document detail lookup
+===================================
+
+Replaced findMockDocument(id) in the workspace page with getDocument(id). The dynamic URL ID now goes through Next's authenticated API helper to GET /documents/:documentId, where Hono verifies the session and scopes the lookup to that user.
+
+Added a small loadDocument() helper around the transport call:
+
+```text
+successful response -> return response.document
+ApiError 404        -> Next notFound()
+any other error     -> rethrow to documents/error.tsx
+```
+
+Missing documents and documents owned by another user intentionally produce the same not-found UI. Network, database, and backend 500 failures are not changed into 404s because that would hide a real outage behind a misleading Document not found message.
+
+Only the document lookup and top-bar metadata are real at this checkpoint. The paper pane and example chat inside the workspace are still hard-coded presentation and must be removed or replaced in the next step.
