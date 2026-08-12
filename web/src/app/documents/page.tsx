@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { DocumentStatusRefresher } from "@/components/document-status-refresher";
 import { PagePreview } from "@/components/page-preview";
 import { TopBar } from "@/components/top-bar";
 import { UploadDialog } from "@/components/upload-dialog";
@@ -188,9 +189,16 @@ export default async function DocumentsPage() {
       total + (document.status === "done" ? document.chunkCount : 0),
     0,
   );
+  const hasActiveIngestion = documents.some(
+    (document) =>
+      document.status === "pending" ||
+      document.status === "parsing" ||
+      document.status === "embedding",
+  );
 
   return (
     <div className="flex min-h-[100dvh] flex-col">
+      <DocumentStatusRefresher active={hasActiveIngestion} />
       <TopBar />
 
       {documents.length === 0 ? (

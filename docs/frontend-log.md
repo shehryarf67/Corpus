@@ -167,3 +167,12 @@ The form uses useActionState(uploadDocumentAction, initialState). While the acti
 For drag and drop, the dropped File is copied into the real file input with DataTransfer. This matters because the browser builds submitted FormData from actual form controls; keeping a File only in React state would not include it in the Server Action request.
 
 After Hono accepts the upload and returns documentId/jobId/status, the dialog closes and router.refresh() reloads the no-store document list. The new document appears with its real pending/indexing status while the worker continues in the background.
+
+Phase 3 live ingestion status
+=============================
+
+The upload Server Action now revalidates /documents immediately after Hono creates the document and pending job. This makes the newly accepted document available to the library render without requiring a manual browser refresh.
+
+Added DocumentStatusRefresher to the library page. While any document has pending, parsing, or embedding status, it calls router.refresh() every two seconds. Because the page is a Server Component and API requests use no-store, each refresh loads the latest job status from Hono and PostgreSQL.
+
+Polling automatically stops when all documents are done or failed, so an idle library does not keep making background requests. This is simple page-level polling; it does not start another ingestion process. The existing background worker remains responsible for the actual PDF ingestion.

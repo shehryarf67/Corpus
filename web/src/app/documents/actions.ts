@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { uploadDocument } from "@/lib/api";
 import { ApiError } from "@/lib/api-error";
 import type { UploadDocumentActionState } from "./upload-types";
@@ -49,6 +50,10 @@ export async function uploadDocumentAction(
     // This calls the frontend API wrapper, which forwards the session cookie
     // and sends multipart FormData to Hono's POST /documents route.
     const result = await uploadDocument(file, title);
+
+    // Hono has now created the document and pending job. Invalidate the
+    // library so its next render includes the newly accepted document.
+    revalidatePath("/documents");
 
     return {
       error: null,
