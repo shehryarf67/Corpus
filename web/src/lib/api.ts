@@ -37,6 +37,7 @@ export type DocumentResponse = {
   uploadedAt: string;
   jobId: string | null;
   jobCreatedAt: string | null;
+  processingLongerThanExpected: boolean;
   status: DocumentJobStatus | null;
   error: string | null;
   chunkCount: number;

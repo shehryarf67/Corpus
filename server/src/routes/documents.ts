@@ -24,6 +24,7 @@ export type DocumentResponse = {
   uploadedAt: string
   jobId: string | null
   jobCreatedAt: string | null
+  processingLongerThanExpected: boolean
   status: JobStatus | null
   error: string | null
   chunkCount: number
@@ -47,6 +48,7 @@ function publicDocument(document: DocumentListRow): DocumentResponse {
     uploadedAt: document.uploaded_at,
     jobId: document.latest_job_id,
     jobCreatedAt: document.latest_job_created_at,
+    processingLongerThanExpected: document.latest_job_is_long_running,
     status: document.latest_job_status,
     error: document.latest_job_error,
     chunkCount: document.chunk_count,

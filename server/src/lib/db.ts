@@ -314,6 +314,7 @@ export type DocumentListRow = DocumentRow & {
   latest_job_status: JobStatus | null
   latest_job_error: string | null
   latest_job_created_at: string | null
+  latest_job_is_long_running: boolean
   chunk_count: number
   page_count: number
 }
@@ -554,6 +555,12 @@ export const Documents = {
          latest_job.status AS latest_job_status,
          latest_job.error AS latest_job_error,
          latest_job.created_at AS latest_job_created_at,
+         CASE
+           WHEN latest_job.status IN ('pending', 'parsing', 'embedding')
+             AND latest_job.created_at <= NOW() - INTERVAL '10 minutes'
+           THEN TRUE
+           ELSE FALSE
+         END AS latest_job_is_long_running,
          COALESCE(chunk_stats.chunk_count, 0) AS chunk_count,
          COALESCE(chunk_stats.page_count, 0) AS page_count
        FROM documents
@@ -586,6 +593,12 @@ export const Documents = {
          latest_job.status AS latest_job_status,
          latest_job.error AS latest_job_error,
          latest_job.created_at AS latest_job_created_at,
+         CASE
+           WHEN latest_job.status IN ('pending', 'parsing', 'embedding')
+             AND latest_job.created_at <= NOW() - INTERVAL '10 minutes'
+           THEN TRUE
+           ELSE FALSE
+         END AS latest_job_is_long_running,
          COALESCE(chunk_stats.chunk_count, 0) AS chunk_count,
          COALESCE(chunk_stats.page_count, 0) AS page_count
        FROM documents

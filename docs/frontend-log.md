@@ -133,6 +133,13 @@ Added UploadDocumentResponse and uploadDocument(file, title?) to web/src/lib/api
 
 The wrapper deliberately does not set Content-Type. fetch generates a multipart/form-data header containing a unique boundary that matches the encoded body. Manually setting only multipart/form-data would omit that boundary and prevent Hono from parsing the fields correctly.
 
+Next 16 upload proxy limit
+==========================
+
+The first upload configuration raised only the Server Action bodySizeLimit. Because this project also uses proxy.ts, Next applies a separate proxyClientMaxBodySize limit before the request reaches the Server Action. Its default is 10 MB, so valid PDFs between 10 MB and 20 MB were truncated and multipart parsing threw Unexpected end of form.
+
+Set experimental.proxyClientMaxBodySize to 21mb as well. Both Next transport layers now leave room for a 20 MiB PDF plus multipart headers, while the client, Server Action, and Hono backend continue enforcing the actual 20 MiB application limit.
+
 The upload response contains documentId, jobId, and the initial job status. Upload acceptance does not mean ingestion is finished; the worker processes the returned job in the background.
 
 Phase 3 upload Server Action
@@ -216,3 +223,12 @@ The initial per-job poller depended on jobId held only in Client Component state
 Document list/detail responses now include the latest jobId and jobCreatedAt. The library seeds its poller from every real document whose latest job is pending, parsing, or embedding. Polling therefore survives Server Component refreshes and full page reloads. The persisted job creation time also keeps the ten-minute timeout meaningful after a remount instead of restarting the timeout clock.
 
 When GET /jobs/:jobId reaches done or failed, the polling Server Action revalidates /documents and the client refreshes it. The resulting real database document supplies the final status, chunk count, page count, and error without a manual browser refresh.
+
+Phase 3 persistent long-running state
+=====================================
+
+Refreshing an active job after its ten-minute polling limit previously reconstructed the poller from backend data and immediately timed it out again. This did not create infinite requests, but it could repeatedly show the same timeout notice on later refreshes.
+
+The document list/detail query now calculates latest_job_is_long_running when the latest job is still pending, parsing, or embedding and was created at least ten minutes ago. The public response exposes this as processingLongerThanExpected without changing the real job status or inventing a failure.
+
+The library does not register these long-running jobs with the automatic poller. Their cards permanently show processing is taking longer than expected until a later manual refresh finds that the backend worker has changed the job to done or failed. This stops repeated timeout polling while keeping PostgreSQL as the source of truth.

@@ -121,6 +121,7 @@ test('document list and detail return owned aggregate data and the latest job', 
       uploadedAt: new Date(ownedDocument.uploaded_at).toISOString(),
       jobId: latestJob.id,
       jobCreatedAt: new Date(updatedLatestJob.created_at).toISOString(),
+      processingLongerThanExpected: false,
       status: 'done',
       error: null,
       chunkCount: 3,
@@ -139,6 +140,48 @@ test('document list and detail return owned aggregate data and the latest job', 
     await pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [
       [owner.id, stranger.id],
     ])
+  }
+})
+
+test('a long-running active job is reported without being marked failed', async () => {
+  const owner = await createTestUser('documents-long-running-owner')
+  const ownerCookie = await createTestSessionCookie(owner.id)
+  const document = await Documents.create(
+    owner.id,
+    'Long-running document',
+    'long-running.pdf',
+    'application/pdf'
+  )
+  if (!document) throw new Error('Failed to create long-running document')
+
+  const job = await Jobs.create(document.id)
+  if (!job) throw new Error('Failed to create long-running job')
+
+  const app = new Hono()
+  app.route('/documents', documentsRoute)
+
+  try {
+    await Jobs.updateStatus(job.id, 'embedding')
+    await pool.query(
+      `UPDATE jobs
+       SET created_at = NOW() - INTERVAL '11 minutes'
+       WHERE id = $1`,
+      [job.id]
+    )
+
+    const response = await app.request('/documents', {
+      headers: { Cookie: ownerCookie },
+    })
+    assert.equal(response.status, 200)
+
+    const body = (await response.json()) as {
+      documents: Array<Record<string, unknown>>
+    }
+    assert.equal(body.documents[0]?.status, 'embedding')
+    assert.equal(body.documents[0]?.error, null)
+    assert.equal(body.documents[0]?.processingLongerThanExpected, true)
+  } finally {
+    await pool.query('DELETE FROM users WHERE id = $1', [owner.id])
   }
 })
 

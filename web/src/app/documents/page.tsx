@@ -35,6 +35,12 @@ function StatusDot({ status }: { status: DocumentJobStatus | null }) {
 function statusLine(document: DocumentResponse) {
   if (document.status === "failed") return "couldn't be indexed";
 
+  // This is still an active backend status, not a failure. The worker may
+  // finish later, but automatic browser polling has stopped for this job.
+  if (document.processingLongerThanExpected) {
+    return "processing is taking longer than expected";
+  }
+
   if (document.status === "pending" || document.status === null) {
     return "waiting to index...";
   }
@@ -205,6 +211,7 @@ export default async function DocumentsPage() {
 
     if (
       !isActive ||
+      document.processingLongerThanExpected ||
       !document.jobId ||
       !document.jobCreatedAt ||
       !document.status
