@@ -1,4 +1,4 @@
-import type { DocumentJobStatus } from "@/lib/api";
+import type { DocumentJobStatus, JobResponse } from "@/lib/api";
 
 // One stable shape works as both useActionState's initial value and the result
 // returned after validation, an API failure, or a successful upload.
@@ -7,4 +7,9 @@ export type UploadDocumentActionState = {
   documentId: string | null;
   jobId: string | null;
   status: DocumentJobStatus | null;
+};
+
+export type JobStatusActionResult = {
+  job: JobResponse | null;
+  error: string | null;
 };

@@ -9,16 +9,6 @@ import { ApiError } from "./api-error";
  * The frontend should match the backend response shape instead of inventing
  * its own version of the data.
  */
-export type JobResponse = {
-  jobId: string;
-  documentId: string;
-  type: string;
-  status: string;
-  error: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
 // These values match the backend JobStatus union. `null` means the document
 // currently has no ingestion job, not that the frontend failed to parse it.
 export type DocumentJobStatus =
@@ -27,6 +17,16 @@ export type DocumentJobStatus =
   | "embedding"
   | "done"
   | "failed";
+
+export type JobResponse = {
+  jobId: string;
+  documentId: string;
+  type: string;
+  status: DocumentJobStatus;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
 
 /** The shared public contract returned by both document GET endpoints. */
 export type DocumentResponse = {

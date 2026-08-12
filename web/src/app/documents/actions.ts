@@ -1,9 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { uploadDocument } from "@/lib/api";
+import { getJob, uploadDocument } from "@/lib/api";
 import { ApiError } from "@/lib/api-error";
-import type { UploadDocumentActionState } from "./upload-types";
+import type {
+  JobStatusActionResult,
+  UploadDocumentActionState,
+} from "./upload-types";
 
 const MAX_PDF_SIZE_BYTES = 20 * 1024 * 1024;
 const PDF_MIME_TYPE = "application/pdf";
@@ -67,5 +70,26 @@ export async function uploadDocumentAction(
 
     console.error("document upload action failed", error);
     return errorState("The document could not be uploaded. Please try again.");
+  }
+}
+
+export async function getJobStatusAction(
+  jobId: string,
+): Promise<JobStatusActionResult> {
+  if (!jobId.trim()) {
+    return { job: null, error: "A job ID is required." };
+  }
+
+  try {
+    // Keep the HttpOnly cookie on the server: getJob() forwards it to Hono's
+    // authenticated GET /jobs/:jobId endpoint on behalf of the Client Component.
+    return { job: await getJob(jobId), error: null };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return { job: null, error: error.message };
+    }
+
+    console.error(`job status check failed for ${jobId}`, error);
+    return { job: null, error: "Could not check the ingestion status." };
   }
 }

@@ -176,3 +176,14 @@ The upload Server Action now revalidates /documents immediately after Hono creat
 Added DocumentStatusRefresher to the library page. While any document has pending, parsing, or embedding status, it calls router.refresh() every two seconds. Because the page is a Server Component and API requests use no-store, each refresh loads the latest job status from Hono and PostgreSQL.
 
 Polling automatically stops when all documents are done or failed, so an idle library does not keep making background requests. This is simple page-level polling; it does not start another ingestion process. The existing background worker remains responsible for the actual PDF ingestion.
+
+Phase 3 per-job polling
+=======================
+
+Replaced broad document-list polling with polling of the exact jobId returned by the upload. A small Server Action calls the existing getJob(jobId) API wrapper, which forwards the HttpOnly session cookie to authenticated GET /jobs/:jobId without exposing the cookie to browser JavaScript.
+
+IngestionJobPollingProvider stays mounted above both the empty and populated library states. UploadDialog registers the accepted job with this provider before closing, allowing polling to continue even when the empty state is replaced by the real document grid.
+
+Each active job is checked every two seconds. Changes through pending, parsing, and embedding refresh the Server Component so its card uses current backend data. Done and failed both trigger a final refresh and remove the job from polling. A failed response also shows the backend job error.
+
+Polling stops after ten minutes and tells the user to refresh later. This timeout stops only browser requests; it does not cancel the background ingestion worker. The interval is also cleared whenever the provider unmounts, preventing a timer leak after navigation.

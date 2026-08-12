@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { DocumentStatusRefresher } from "@/components/document-status-refresher";
+import { IngestionJobPollingProvider } from "@/components/ingestion-job-poller";
 import { PagePreview } from "@/components/page-preview";
 import { TopBar } from "@/components/top-bar";
 import { UploadDialog } from "@/components/upload-dialog";
@@ -189,22 +189,15 @@ export default async function DocumentsPage() {
       total + (document.status === "done" ? document.chunkCount : 0),
     0,
   );
-  const hasActiveIngestion = documents.some(
-    (document) =>
-      document.status === "pending" ||
-      document.status === "parsing" ||
-      document.status === "embedding",
-  );
-
   return (
-    <div className="flex min-h-[100dvh] flex-col">
-      <DocumentStatusRefresher active={hasActiveIngestion} />
-      <TopBar />
+    <IngestionJobPollingProvider>
+      <div className="flex min-h-[100dvh] flex-col">
+        <TopBar />
 
-      {documents.length === 0 ? (
-        <EmptyState />
-      ) : (
-        <main className="mx-auto w-full max-w-[960px] px-6 py-12">
+        {documents.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <main className="mx-auto w-full max-w-[960px] px-6 py-12">
           <div className="mb-8 flex items-end justify-between gap-6">
             <div>
               <div className="font-mono text-[10.5px] tracking-[0.14em] text-graphite-dim uppercase">
@@ -230,8 +223,9 @@ export default async function DocumentsPage() {
               <DocumentCard key={document.id} document={document} />
             ))}
           </ul>
-        </main>
-      )}
-    </div>
+          </main>
+        )}
+      </div>
+    </IngestionJobPollingProvider>
   );
 }

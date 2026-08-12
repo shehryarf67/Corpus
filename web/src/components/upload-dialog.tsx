@@ -11,6 +11,7 @@ import {
 } from "react";
 import { uploadDocumentAction } from "@/app/documents/actions";
 import type { UploadDocumentActionState } from "@/app/documents/upload-types";
+import { useIngestionJobPolling } from "@/components/ingestion-job-poller";
 
 const MAX_PDF_SIZE_BYTES = 20 * 1024 * 1024;
 const PDF_MIME_TYPE = "application/pdf";
@@ -36,6 +37,7 @@ function validateFile(file: File | undefined): string | null {
 
 export function UploadDialog() {
   const router = useRouter();
+  const { watchJob } = useIngestionJobPolling();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -48,13 +50,21 @@ export function UploadDialog() {
   );
 
   useEffect(() => {
-    if (!state.documentId) return;
+    if (!state.documentId || !state.jobId || !state.status) return;
+
+    // The provider lives above the changing empty/list page content, so it can
+    // keep polling even after this dialog closes or unmounts.
+    watchJob({
+      jobId: state.jobId,
+      documentId: state.documentId,
+      status: state.status,
+    });
 
     // The upload is accepted and its pending job now exists. Refresh the
     // Server Component so the real document appears in the library.
     dialogRef.current?.close();
     router.refresh();
-  }, [router, state.documentId]);
+  }, [router, state.documentId, state.jobId, state.status, watchJob]);
 
   function chooseFile(file: File | undefined) {
     const error = validateFile(file);
