@@ -75,3 +75,41 @@ Storage corruption or unexpected programming error
 ```
 
 Calling all errors 404 would hide real operational problems and mislead both the user and developer. The route therefore catches only the known missing-file error and rethrows unexpected failures so normal server error handling can treat them as 500-level problems.
+
+Step 2: Next PDF proxy route
+============================
+
+Created web/src/app/api/documents/[id]/pdf/route.ts, which gives the browser a same-origin GET /api/documents/:id/pdf URL.
+
+```text
+Browser requests the Next PDF URL
+-> proxy.ts checks whether a session cookie is present
+-> Next reads the HttpOnly cookie server-side
+-> Next forwards the cookie to Hono
+-> Hono requireAuth validates the session in PostgreSQL
+-> Hono checks ownership and reads storage
+-> Next passes the PDF response stream back to the browser
+```
+
+proxy.ts is only an optimistic cookie-presence check. A present cookie could still be invalid or expired. Hono's requireAuth performs the real authentication, and its ownership-scoped document query decides whether the user may access the PDF.
+
+The Route Handler uses API_BASE_URL rather than NEXT_PUBLIC_API_BASE_URL. API_BASE_URL stays in server code, while NEXT_PUBLIC variables can be exposed to browser JavaScript. The browser therefore knows only the same-origin Next URL and does not need the internal Hono URL.
+
+Passing through Hono responses
+==============================
+
+The route returns response.body directly. This is a stream, so Next passes bytes onward as they arrive instead of buffering another complete PDF copy. It preserves the response status and the Content-Type, Content-Disposition, and Content-Length headers needed by the browser.
+
+fetch does not throw merely because Hono returns 401, 404, or 500. Those are completed HTTP responses, so Next passes their status and body through normally.
+
+Handling a failed Hono connection
+=================================
+
+fetch throws when Next receives no HTTP response, for example when Hono is stopped, the connection is refused, or the connection breaks. The route catches this network-level failure, records the detailed error in server logs, and returns:
+
+```text
+502 Bad Gateway
+{ "error": "Document service is currently unavailable" }
+```
+
+502 is appropriate because Next is acting as a gateway: Next received the browser request, but its upstream Hono service could not be reached. This is not a 404 because a connection failure does not prove that the document is missing. The internal network error is not sent to the browser because it may reveal implementation details and is not useful to the user.
