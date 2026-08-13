@@ -113,3 +113,39 @@ fetch throws when Next receives no HTTP response, for example when Hono is stopp
 ```
 
 502 is appropriate because Next is acting as a gateway: Next received the browser request, but its upstream Hono service could not be reached. This is not a 404 because a connection failure does not prove that the document is missing. The internal network error is not sent to the browser because it may reveal implementation details and is not useful to the user.
+
+Step 3: React-PDF and PDF.js compatibility
+==========================================
+
+Installed and exactly pinned these packages inside the web workspace:
+
+```text
+react-pdf 10.4.1
+pdfjs-dist 5.4.296
+```
+
+React-PDF 10.4.1 declares pdfjs-dist 5.4.296 as its exact PDF.js dependency. The repository root currently has pdfjs-dist 6.2.108 for other code, but the web viewer must not resolve that incompatible version. PDF.js checks that its main library and worker versions agree; mixing versions can produce a worker/API version mismatch and prevent rendering. Pinning pdfjs-dist directly in web makes the viewer's dependency explicit and stable.
+
+Created pdf-page.tsx as the browser-only module that imports React-PDF's Document, Page, and pdfjs. It configures the worker with:
+
+```text
+new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString()
+```
+
+This lets the Next bundler emit and reference the worker from the installed local package. It does not depend on an external CDN, does not need a hard-coded public worker URL, and stays aligned with the pinned PDF.js version.
+
+The worker configuration intentionally lives in the same module that renders Document and Page. React-PDF warns that configuring workerSrc in an unrelated setup module can be overwritten because of module execution order.
+
+Created pdf-page-client.tsx as an SSR-disabled dynamic wrapper. PDF.js needs browser APIs and a Web Worker, so the worker-owning component must not run during Next server rendering:
+
+```text
+Server-rendered document workspace
+-> PdfPageClient dynamic boundary with ssr: false
+-> browser loads pdf-page.tsx
+-> local PDF.js worker starts
+-> React-PDF loads and renders the PDF
+```
+
+The text-layer and annotation-layer styles are imported now because later citation selection, text highlighting, and PDF links depend on those React-PDF layers being positioned correctly.
+
+The component is configured but not yet connected to the document workspace. The upcoming viewer step will pass /api/documents/:id/pdf as fileUrl and add page navigation, sizing, loading, errors, and citation highlighting.
