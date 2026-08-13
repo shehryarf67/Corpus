@@ -5,7 +5,7 @@ import {
   type DocumentListRow,
   type JobStatus,
 } from '../lib/db.js'
-import { deletePdf, savePdf } from '../lib/storage.js'
+import { deletePdf, readPdf, savePdf } from '../lib/storage.js'
 import { requireAuth, type AuthEnv } from '../middleware/auth.js'
 
 export const documentsRoute = new Hono<AuthEnv>()
@@ -76,6 +76,41 @@ documentsRoute.get('/:documentId', async (c) => {
     document: publicDocument(document),
   }
   return c.json(response)
+})
+
+documentsRoute.get('/:documentId/pdf', async (c) => {
+  const document = await Documents.getByIdForUser(
+    c.req.param('documentId'),
+    c.get('user').id
+  )
+
+  if (!document || !document.storage_key) {
+    return c.json({ error: "Document not found" }, 404)
+  }
+
+  try {
+    const pdfBuffer = await readPdf(document.storage_key)
+    const pdfBytes = new Uint8Array(pdfBuffer)
+
+    return new Response(pdfBytes, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": 'inline; filename="safe-name.pdf"',
+      },
+    })
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      return c.json({ error: "Document not found" }, 404) // We need to throw specifically error 404 here because the file is missing, 
+      // but the document row exists. This is a rare case, but it can happen if the file was deleted from storage after the document was created.
+    }
+
+    throw error
+  }
 })
 
 documentsRoute.delete('/:documentId', async (c) => {
