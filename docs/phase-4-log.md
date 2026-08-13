@@ -149,3 +149,23 @@ Server-rendered document workspace
 The text-layer and annotation-layer styles are imported now because later citation selection, text highlighting, and PDF links depend on those React-PDF layers being positioned correctly.
 
 The component is configured but not yet connected to the document workspace. The upcoming viewer step will pass /api/documents/:id/pdf as fileUrl and add page navigation, sizing, loading, errors, and citation highlighting.
+
+Step 4: PDF viewer component structure
+======================================
+
+Created three empty component files so the real viewer can be implemented one responsibility at a time:
+
+```text
+pdf-viewer.tsx
+-> owns the interactive viewer state and controls
+
+pdf-document.tsx
+-> configures React-PDF/PDF.js and renders the actual document pages
+
+pdf-viewer-client.tsx
+-> provides the Next dynamic import boundary with SSR disabled
+```
+
+The viewer UI belongs inside the existing /documents/:id workspace page. The /api/documents/:id/pdf route is not a visual page; it is the protected binary file source consumed by the viewer.
+
+The existing pdf-page.tsx and pdf-page-client.tsx files remain untouched while we build the new structure. Removing or replacing them before the new viewer works would make it harder to compare the simple setup with the completed multi-page viewer.
