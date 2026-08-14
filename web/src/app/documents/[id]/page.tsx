@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { PdfViewerClient } from "@/components/pdf-viewer-client";
 import { TopBar, TopBarDivider } from "@/components/top-bar";
 import { getDocument, type DocumentResponse } from "@/lib/api";
 import { ApiError } from "@/lib/api-error";
@@ -29,26 +30,12 @@ function PaperPane({ document }: { document: DocumentResponse }) {
   return (
     <section
       aria-label="Document"
-      className="flex min-h-[420px] items-center justify-center px-6 py-12"
+      className="min-w-0 min-h-[640px] overflow-hidden lg:min-h-0"
     >
-      <div className="w-full max-w-[520px] rounded-[4px] border border-dashed border-rule-strong px-8 py-14 text-center">
-        <div className="font-mono text-[10.5px] tracking-[0.14em] text-graphite-dim uppercase">
-          Document viewer
-        </div>
-        <h1 className="mt-4 font-serif text-[30px] leading-[1.1] font-semibold tracking-[-0.02em]">
-          PDF viewer coming next.
-        </h1>
-        <p className="mx-auto mt-3 max-w-[42ch] font-serif text-[14.5px] leading-[1.66] text-graphite">
-          The real file is safely stored and indexed. Rendering pages and
-          jumping to cited passages will be connected in the viewer phase.
-        </p>
-        <div className="mt-6 font-mono text-[10.5px] leading-[1.7] text-graphite-dim">
-          <div className="truncate text-graphite">{document.filename}</div>
-          <div>
-            {document.pageCount} {document.pageCount === 1 ? "page" : "pages"}
-          </div>
-        </div>
-      </div>
+      <PdfViewerClient
+        documentId={document.id}
+        filename={document.filename}
+      />
     </section>
   );
 }

@@ -255,3 +255,69 @@ goToPage
 ```
 
 The targetPage effect calls only scrollToPage because it is synchronizing a prop with the external scroll container. After IntersectionObserver is implemented, the observer callback will see the newly visible citation page and update currentPage. This avoids competing state updates and gives manual scroll, toolbar navigation, and citation navigation one authoritative visible-page signal.
+
+Step 4c: selectable PDF text layer
+==================================
+
+React-PDF's Page rendering has multiple layers:
+
+```text
+canvas layer
+-> draws the visible PDF page
+
+text layer
+-> places transparent, selectable HTML text over the canvas
+
+annotation layer
+-> supports PDF links and interactive annotations
+```
+
+The text-layer and annotation-layer CSS files were already imported in pdf-document.tsx from the earlier React-PDF setup. The Page component now explicitly sets renderTextLayer and renderAnnotationLayer so this behavior is visible in our code rather than relying silently on React-PDF defaults.
+
+The canvas alone looks like the PDF but behaves like an image: users cannot reliably select/search its words, and citation highlighting has no text elements to target. The text layer creates positioned spans aligned over the canvas. Browser selection and find-in-page can operate on those spans, and the later citation feature can identify and style matching spans on the cited page.
+
+The text layer is a frontend rendering feature and is separate from ingestion text extraction. Backend chunks support retrieval and citation metadata; browser text spans support visual selection and highlighting on the original PDF.
+
+Step 4d: browser-only viewer boundary
+=====================================
+
+Implemented pdf-viewer-client.tsx as a Client Component that dynamically imports PdfViewer with ssr: false.
+
+The document workspace page is a Server Component, but PDF.js needs browser-only APIs such as window, Canvas, and Web Workers. The wrapper forms this boundary:
+
+```text
+Next server renders workspace
+-> PdfViewerClient renders its preparation state
+-> browser downloads the PdfViewer module
+-> PdfViewer imports PdfDocument and PDF.js
+-> the local PDF.js worker starts in the browser
+```
+
+The dynamic import uses .then(module => module.PdfViewer) because PdfViewer is a named export. If PdfViewer were the module's default export, dynamic(() => import("./pdf-viewer")) would be sufficient.
+
+ComponentProps<typeof PdfViewerWithoutSsr> derives the wrapper's props from the loaded viewer instead of manually duplicating documentId, filename, and targetPage. The spread in <PdfViewerWithoutSsr {...props} /> forwards those values unchanged. This keeps the wrapper synchronized if PdfViewer's props evolve later.
+
+The Preparing PDF viewer message refers to loading the browser-side viewer JavaScript. It is separate from Loading PDF, which appears after the viewer is ready while React-PDF requests and parses the actual file.
+
+This step does not yet replace the workspace's PaperPane placeholder. The next connection step will import PdfViewerClient into /documents/:id/page.tsx and pass the real document ID and filename.
+
+Step 4e: connect the real viewer to the workspace
+=================================================
+
+Replaced the temporary PDF viewer coming next content inside the workspace's PaperPane with PdfViewerClient. The Server Component already loads an ownership-scoped DocumentResponse, then passes only the real document ID and filename into the browser-only viewer boundary:
+
+```text
+/documents/:id Server Component
+-> getDocument(id) through authenticated Hono API
+-> PaperPane receives owned document metadata
+-> PdfViewerClient receives document.id and document.filename
+-> PdfViewer builds /api/documents/:id/pdf
+-> protected Next route forwards the session to Hono
+-> React-PDF renders the returned original PDF
+```
+
+The filename is presentation data for the viewer toolbar. The document ID selects the protected PDF URL. Passing the ID does not bypass security because both the Next request path and Hono route still authenticate the session, and Hono performs the ownership-scoped database lookup before reading storage.
+
+PaperPane remains as the workspace layout boundary rather than being deleted. It gives the PDF side a minimum mobile height, allows it to shrink correctly inside the desktop grid, and hides page overflow outside the viewer's own scroll container. The viewer itself owns internal PDF scrolling.
+
+No targetPage is supplied yet because the workspace chat is still mock presentation. The future real citation click will store a selected page in a shared client workspace component and pass it as targetPage.

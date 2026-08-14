@@ -63,7 +63,15 @@ export default function PdfDocument({
               }
             }}
           >
-            <Page pageNumber={pageNumber} scale={zoom} />
+            <Page
+              pageNumber={pageNumber}
+              scale={zoom}
+              // Canvas draws the visible page. The transparent text layer sits
+              // over it so text remains selectable/searchable and gives future
+              // citation highlighting real text spans to target.
+              renderTextLayer
+              renderAnnotationLayer
+            />
           </div>
         );
       })}
