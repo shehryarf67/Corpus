@@ -463,3 +463,18 @@ and both the input and button show disabled behavior while waiting.
 The input now clears only when the done event confirms successful completion.
 It is not cleared at request start. This means a failed request leaves the
 original question in the input so the user can retry without retyping it.
+
+Step 4j: explicit streaming answer state
+=========================================
+
+Each chat message now carries its own status. A user message starts completed,
+while the empty assistant placeholder starts as processing. This makes the
+submitted user question and a Processing... indicator appear immediately,
+before Hono or Ollama returns the first token.
+
+The first token changes the assistant message to streaming and replaces the
+processing indicator with its accumulated content. Later tokens append to the
+same message. The done event replaces that draft with the validated final
+answer, attaches sources, and marks the message done. A failed stream marks only
+that assistant message as error while preserving any partial text and the input
+question for retry.

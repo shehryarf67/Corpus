@@ -11,6 +11,7 @@ type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   sources: QuerySource[];
+  status: "done" | "processing" | "streaming" | "error";
 };
 
 type DocumentChatProps = {
@@ -48,6 +49,7 @@ export function DocumentChat({ documentId }: DocumentChatProps) {
       role: "user",
       content: submittedQuestion,
       sources: [],
+      status: "done",
     };
     const assistantMessageId = createMessageId();
     const assistantMessage: ChatMessage = {
@@ -55,6 +57,9 @@ export function DocumentChat({ documentId }: DocumentChatProps) {
       role: "assistant",
       content: "",
       sources: [],
+      // This message exists before Hono sends its first text token, so the UI
+      // can immediately show that the submitted question is being processed.
+      status: "processing",
     };
 
     // Add an empty assistant message now. Each token will fill this same
@@ -85,7 +90,11 @@ export function DocumentChat({ documentId }: DocumentChatProps) {
             setMessages((current) =>
               current.map((message) =>
                 message.id === assistantMessageId
-                  ? { ...message, content: message.content + text }
+                  ? {
+                      ...message,
+                      content: message.content + text,
+                      status: "streaming",
+                    }
                   : message,
               ),
             );
@@ -101,6 +110,7 @@ export function DocumentChat({ documentId }: DocumentChatProps) {
                       ...message,
                       content: result.answer,
                       sources: result.sources,
+                      status: "done",
                     }
                   : message,
               ),
@@ -122,6 +132,13 @@ export function DocumentChat({ documentId }: DocumentChatProps) {
           streamError instanceof Error
             ? streamError.message
             : "The answer could not be generated.",
+        );
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === assistantMessageId
+              ? { ...message, status: "error" }
+              : message,
+          ),
         );
       }
     } finally {
@@ -156,7 +173,17 @@ export function DocumentChat({ documentId }: DocumentChatProps) {
                   : "max-w-full text-[13.8px] leading-[1.72] text-read"
               }
             >
-              {message.content || (isStreaming ? "Thinking..." : "")}
+              {message.status === "processing" ? (
+                <span className="font-mono text-[11px] text-graphite-dim">
+                  Processing...
+                </span>
+              ) : message.content ? (
+                message.content
+              ) : message.status === "error" ? (
+                <span className="text-graphite-dim">
+                  No answer was generated.
+                </span>
+              ) : null}
 
               {message.sources.length > 0 && (
                 <div className="mt-3.5 border-t border-rule pt-3">
