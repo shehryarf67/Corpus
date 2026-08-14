@@ -11,7 +11,7 @@ type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   sources: QuerySource[];
-  status: "done" | "processing" | "streaming" | "stopped" | "error";
+  status: "done" | "processing" | "streaming" | "stopped";
 };
 
 type DocumentChatProps = {
@@ -119,6 +119,8 @@ export function DocumentChat({ documentId }: DocumentChatProps) {
             // The backend validates the complete answer before `done`. Replace
             // the token-built draft because done.answer is authoritative and
             // is not guaranteed to equal the raw token concatenation.
+            // A grounded refusal such as "the document does not say" also
+            // arrives through done and should remain a normal assistant reply.
             setMessages((current) =>
               current.map((message) =>
                 message.id === assistantMessageId
@@ -159,12 +161,11 @@ export function DocumentChat({ documentId }: DocumentChatProps) {
             ? streamError.message
             : "The answer could not be generated.",
         );
+        // A network, HTTP, or SSE error means there is no trustworthy final
+        // assistant answer. Remove its partial placeholder instead of leaving
+        // a permanently half-finished response in the conversation.
         setMessages((current) =>
-          current.map((message) =>
-            message.id === assistantMessageId
-              ? { ...message, status: "error" }
-              : message,
-          ),
+          current.filter((message) => message.id !== assistantMessageId),
         );
       }
     } finally {
@@ -205,10 +206,6 @@ export function DocumentChat({ documentId }: DocumentChatProps) {
                 </span>
               ) : message.content ? (
                 message.content
-              ) : message.status === "error" ? (
-                <span className="text-graphite-dim">
-                  No answer was generated.
-                </span>
               ) : message.status === "stopped" ? (
                 <span className="text-graphite-dim">
                   Generation stopped.

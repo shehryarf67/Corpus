@@ -475,9 +475,8 @@ before Hono or Ollama returns the first token.
 The first token changes the assistant message to streaming and replaces the
 processing indicator with its accumulated content. Later tokens append to the
 same message. The done event replaces that draft with the validated final
-answer, attaches sources, and marks the message done. A failed stream marks only
-that assistant message as error while preserving any partial text and the input
-question for retry.
+answer, attaches sources, and marks the message done. Technical failure handling
+was refined in Step 4l below.
 
 Step 4k: user-controlled stream cancellation
 =============================================
@@ -494,3 +493,24 @@ Start over aborts any active request, clears the messages, input, errors, and
 conversation ID, and returns the chat to its initial state. Clearing the
 conversation ID is important because the next question should create a fresh
 backend conversation instead of continuing the previous history.
+
+Step 4l: distinguish RAG refusals from technical failures
+=========================================================
+
+The frontend now classifies outcomes using the stream protocol rather than
+guessing from the wording of an answer.
+
+A done event is a successful assistant response. This includes an ordinary RAG
+refusal such as saying that the indexed document does not contain enough
+information. The UI keeps done.answer as a normal assistant message because the
+backend intentionally completed and validated that response.
+
+An HTTP failure, network failure, malformed/incomplete stream, or SSE error
+event is a technical failure. In this case there is no authoritative done.answer,
+so the chat removes the unfinished assistant placeholder and displays the error
+separately above the input. The user's question and input remain available for
+retry instead of presenting partial generated text as a real answer.
+
+User cancellation remains a third state. It can preserve partial text because
+the user deliberately stopped it, but the message is labelled stopped and
+explicitly says it was not finalized or citation-validated.
