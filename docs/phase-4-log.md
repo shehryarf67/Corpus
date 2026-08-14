@@ -209,3 +209,49 @@ PdfDocument and PdfViewer both keep a page-count value for different reasons. Pd
 Array.from creates one entry per page. Its index begins at 0, while PDF.js page numbers begin at 1, so pageNumber is index + 1. Each wrapper stores data-page-number and a callback ref. When React mounts an element, it is added to the map; when React unmounts it, the null ref callback removes it. These references will support goToPage now and visible-page observation later.
 
 IntersectionObserver is deliberately deferred. The pages and refs must render correctly first. The next step will observe these existing wrapper elements and call onCurrentPageChange when the most visible page changes.
+
+Step 4b: real pager and viewer toolbar
+======================================
+
+The pager belongs in pdf-viewer.tsx because PdfViewer owns currentPage, totalPages, zoom, and goToPage. PdfDocument remains focused on technical PDF loading and page rendering.
+
+The toolbar now contains Previous, current page / total pages, Next, zoom out, zoom percentage, and zoom in. Previous is disabled on page 1, Next is disabled on the final page, and both are disabled before React-PDF reports a page count. The disabled UI prevents ordinary invalid clicks, while goToPage also clamps every requested page between 1 and totalPages to protect calls from other code.
+
+```text
+Previous click
+-> goToPage(currentPage - 1)
+
+Next click
+-> goToPage(currentPage + 1)
+
+Future citation click
+-> parent changes targetPage
+-> PdfViewer effect calls goToPage(targetPage)
+```
+
+goToPage looks up the page's real HTML wrapper in pageRefs and calls scrollIntoView. While IntersectionObserver is still deferred, goToPage also updates currentPage immediately so the pager changes after button and programmatic navigation. Once observation is added, scrolling will also update currentPage automatically.
+
+targetPage is optional because normal viewing does not always involve a citation. It creates a declarative parent-to-viewer API: the future workspace can store the selected citation page and pass it to PdfViewer without reaching into the viewer's internal ref map.
+
+PdfViewer now renders PdfDocument with fileUrl, zoom, pageRefs, and load/error callbacks. The protected URL is still fetched internally by React-PDF. A successful load updates totalPages and clears old errors; a failure logs technical details and shows a safe viewer message.
+
+React effect and navigation state detail
+========================================
+
+The first targetPage effect called goToPage, and goToPage synchronously called setCurrentPage. React's lint rules rejected this because an effect should synchronize with an external system, while synchronously deriving more React state inside it can cause cascading renders.
+
+Navigation is now split into two layers:
+
+```text
+scrollToPage
+-> clamps the page number
+-> finds the HTML element
+-> scrolls the browser DOM
+-> does not change React state
+
+goToPage
+-> calls scrollToPage
+-> updates currentPage for direct toolbar clicks
+```
+
+The targetPage effect calls only scrollToPage because it is synchronizing a prop with the external scroll container. After IntersectionObserver is implemented, the observer callback will see the newly visible citation page and update currentPage. This avoids competing state updates and gives manual scroll, toolbar navigation, and citation navigation one authoritative visible-page signal.
