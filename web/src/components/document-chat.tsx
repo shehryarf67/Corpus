@@ -11,7 +11,7 @@ type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   sources: QuerySource[];
-  status: "done" | "processing" | "streaming" | "error";
+  status: "done" | "processing" | "streaming" | "stopped" | "error";
 };
 
 type DocumentChatProps = {
@@ -37,6 +37,22 @@ export function DocumentChat({ documentId }: DocumentChatProps) {
     // answer is streaming. This prevents an abandoned request updating state.
     return () => requestController.current?.abort();
   }, []);
+
+  function stopActiveStream() {
+    requestController.current?.abort();
+  }
+
+  function startOver() {
+    // Abort first so the old request cannot keep producing useful work. Its
+    // callbacks may run once more, but the old messages no longer exist.
+    requestController.current?.abort();
+    requestController.current = null;
+    setMessages([]);
+    setConversationId(undefined);
+    setQuestion("");
+    setError(null);
+    setIsStreaming(false);
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -124,10 +140,20 @@ export function DocumentChat({ documentId }: DocumentChatProps) {
         controller.signal,
       );
     } catch (streamError) {
-      if (
-        !(streamError instanceof DOMException) ||
-        streamError.name !== "AbortError"
-      ) {
+      const wasAborted =
+        streamError instanceof Error && streamError.name === "AbortError";
+
+      if (wasAborted) {
+        // Preserve any text already displayed, but make it clear that this is
+        // a stopped draft and no authoritative done.answer was received.
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === assistantMessageId
+              ? { ...message, status: "stopped" }
+              : message,
+          ),
+        );
+      } else {
         setError(
           streamError instanceof Error
             ? streamError.message
@@ -183,7 +209,17 @@ export function DocumentChat({ documentId }: DocumentChatProps) {
                 <span className="text-graphite-dim">
                   No answer was generated.
                 </span>
+              ) : message.status === "stopped" ? (
+                <span className="text-graphite-dim">
+                  Generation stopped.
+                </span>
               ) : null}
+
+              {message.status === "stopped" && message.content && (
+                <p className="mt-2 font-mono text-[10px] text-graphite-dim">
+                  Generation stopped before the final answer was validated.
+                </p>
+              )}
 
               {message.sources.length > 0 && (
                 <div className="mt-3.5 border-t border-rule pt-3">
@@ -211,6 +247,27 @@ export function DocumentChat({ documentId }: DocumentChatProps) {
         onSubmit={handleSubmit}
         className="border-t border-rule bg-chrome px-[26px] pt-3.5 pb-[18px]"
       >
+        {(messages.length > 0 || isStreaming) && (
+          <div className="mb-2 flex justify-end gap-2">
+            {isStreaming && (
+              <button
+                type="button"
+                onClick={stopActiveStream}
+                className="rounded-[3px] border border-rule-strong px-2 py-1 font-mono text-[10px] text-graphite transition-colors hover:border-marker-line hover:text-bone"
+              >
+                Stop generating
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={startOver}
+              className="rounded-[3px] border border-rule-strong px-2 py-1 font-mono text-[10px] text-graphite transition-colors hover:border-marker-line hover:text-bone"
+            >
+              Start over
+            </button>
+          </div>
+        )}
+
         {error && (
           <p role="alert" className="mb-2 text-[12px] text-red-400">
             {error}

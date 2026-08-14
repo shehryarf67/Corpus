@@ -478,3 +478,19 @@ same message. The done event replaces that draft with the validated final
 answer, attaches sources, and marks the message done. A failed stream marks only
 that assistant message as error while preserving any partial text and the input
 question for retry.
+
+Step 4k: user-controlled stream cancellation
+=============================================
+
+The existing AbortController already cancelled the fetch reader when the chat
+component unmounted. Added controls for the other two cancellation cases.
+
+Stop generating aborts the active request and preserves any token text already
+shown. The assistant message becomes stopped rather than remaining in processing
+or pretending to be a completed answer. It also explains that no authoritative,
+citation-validated done.answer arrived.
+
+Start over aborts any active request, clears the messages, input, errors, and
+conversation ID, and returns the chat to its initial state. Clearing the
+conversation ID is important because the next question should create a fresh
+backend conversation instead of continuing the previous history.
