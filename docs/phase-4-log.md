@@ -361,3 +361,51 @@ against an active database session.
 If Hono returns an ordinary HTTP error such as 400 or 401 before SSE starts,
 Next passes that status and body through. If Next cannot connect to Hono at all,
 the route returns 502 because the upstream query service is unavailable.
+
+Step 4g: frontend SSE stream parser
+===================================
+
+Added query-stream.ts as the browser helper for POST /api/query/stream. We use
+fetch rather than EventSource because the query request needs a POST method and
+a JSON body containing documentId, question, and optional conversationId.
+
+The helper calls only the same-origin Next endpoint. It does not know Hono's
+URL and does not manually read the HttpOnly cookie. The browser sends that
+cookie to Next automatically; the Next route then forwards it to Hono.
+
+```text
+streamQuery(input, handlers)
+-> POST JSON to /api/query/stream
+-> response.body.getReader()
+-> read Uint8Array network chunks
+-> TextDecoder converts bytes to text
+-> buffer joins incomplete pieces
+-> split complete SSE blocks on blank lines
+-> parse event name and JSON data
+-> call the matching UI handler
+```
+
+Network chunks are not the same thing as SSE events. A single event can be
+split across multiple reader.read() calls, and one read can contain several
+events. The buffer keeps the final incomplete piece and joins it with the next
+read. Only blocks ending at an SSE blank-line boundary are parsed immediately.
+
+TextDecoder uses stream: true so a multi-byte character split across network
+reads is not corrupted. CRLF is normalized to LF, and multiple SSE data lines
+are joined before JSON parsing.
+
+The typed handlers match the current Hono contract:
+
+```text
+conversation -> provide/store the conversation ID
+status       -> generating or finalizing
+token        -> append event.text to the visible assistant answer
+done         -> replace/finalize with the validated answer and sources
+error        -> report the safe streamed error
+```
+
+streamQuery resolves with the done result so a caller can use either callbacks
+for live UI updates or the final returned value. It rejects normal HTTP errors,
+streamed error events, missing response bodies, malformed events, and streams
+that close before done. An optional AbortSignal lets a future chat component
+cancel reading when needed or when it unmounts.
