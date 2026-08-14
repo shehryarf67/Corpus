@@ -169,3 +169,43 @@ pdf-viewer-client.tsx
 The viewer UI belongs inside the existing /documents/:id workspace page. The /api/documents/:id/pdf route is not a visual page; it is the protected binary file source consumed by the viewer.
 
 The existing pdf-page.tsx and pdf-page-client.tsx files remain untouched while we build the new structure. Removing or replacing them before the new viewer works would make it harder to compare the simple setup with the completed multi-page viewer.
+
+PdfViewer callbacks and PdfDocument responsibilities
+=====================================================
+
+PdfViewer owns currentPage, totalPages, zoom, error, and pageRefs. Its callback functions remain inside PdfViewer because they use that component's state setters and refs. PdfViewer passes those function values down to PdfDocument rather than calling them immediately.
+
+```text
+PdfViewer owns totalPages
+-> passes handleLoadSuccess downward
+-> PdfDocument learns that the PDF has 8 pages
+-> PdfDocument calls onLoadSuccess(8)
+-> the original PdfViewer function runs setTotalPages(8)
+-> PdfViewer re-renders with the updated toolbar state
+```
+
+The state itself does not travel back from PdfDocument. The state remains in PdfViewer; the child receives permission, through a callback, to trigger its parent's state update.
+
+PdfDocument is the technical React-PDF rendering layer. It does not repeat backend ingestion, create blocks, chunks, or embeddings, and it does not manually fetch the PDF. It gives fileUrl to React-PDF's Document component, which requests the protected Next PDF endpoint and parses the returned original PDF bytes in the browser.
+
+Step 4a: basic PdfDocument implementation
+=========================================
+
+Implemented pdf-document.tsx without IntersectionObserver. It now:
+
+```text
+configures the matching local PDF.js worker
+-> receives fileUrl, zoom, pageRefs, and callbacks
+-> passes fileUrl to React-PDF Document
+-> receives numPages after successful parsing
+-> stores numPages locally to create Page components
+-> calls the parent's onLoadSuccess callback
+-> renders every PDF page vertically
+-> registers and removes each page container in pageRefs
+```
+
+PdfDocument and PdfViewer both keep a page-count value for different reasons. PdfDocument's numberOfPages controls how many Page components are rendered. PdfViewer's totalPages is presentation/controller state used for text such as Page 2 / 8 and navigation limits.
+
+Array.from creates one entry per page. Its index begins at 0, while PDF.js page numbers begin at 1, so pageNumber is index + 1. Each wrapper stores data-page-number and a callback ref. When React mounts an element, it is added to the map; when React unmounts it, the null ref callback removes it. These references will support goToPage now and visible-page observation later.
+
+IntersectionObserver is deliberately deferred. The pages and refs must render correctly first. The next step will observe these existing wrapper elements and call onCurrentPageChange when the most visible page changes.
