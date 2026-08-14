@@ -321,3 +321,43 @@ The filename is presentation data for the viewer toolbar. The document ID select
 PaperPane remains as the workspace layout boundary rather than being deleted. It gives the PDF side a minimum mobile height, allows it to shrink correctly inside the desktop grid, and hides page overflow outside the viewer's own scroll container. The viewer itself owns internal PDF scrolling.
 
 No targetPage is supplied yet because the workspace chat is still mock presentation. The future real citation click will store a selected page in a shared client workspace component and pass it as targetPage.
+
+Step 4f: browser-facing query stream route
+===========================================
+
+Added POST /api/query/stream as a Next Route Handler. The browser will call
+this same-origin endpoint instead of knowing Hono's internal API URL.
+
+The route reads the incoming request body and forwards it unchanged to Hono's
+existing POST /query/stream endpoint. Hono still owns request validation and
+the full query pipeline. Next reads the HttpOnly session cookie on the server
+and forwards it so Hono's requireAuth middleware can perform the real database
+session check.
+
+```text
+browser chat UI
+-> Next POST /api/query/stream
+-> forward request body and session cookie
+-> Hono POST /query/stream
+-> requireAuth and query pipeline
+-> SSE response returned through Next
+-> browser reads events as they arrive
+```
+
+The Hono response is named upstream because, from Next's point of view, Hono
+is the server farther up the request chain. upstream.body is the live
+ReadableStream containing the SSE events.
+
+The route returns upstream.body directly and preserves the SSE content type
+and cache-control headers. It must not call upstream.text() or upstream.json(),
+because either operation would consume and buffer the complete response before
+the browser received it, destroying token-by-token streaming.
+
+Next's proxy.ts can provide a cheap cookie-presence redirect for protected UI,
+but it does not prove that a session is valid. The authoritative authentication
+check remains Hono's requireAuth middleware, which hashes and checks the token
+against an active database session.
+
+If Hono returns an ordinary HTTP error such as 400 or 401 before SSE starts,
+Next passes that status and body through. If Next cannot connect to Hono at all,
+the route returns 502 because the upstream query service is unavailable.
