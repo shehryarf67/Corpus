@@ -64,7 +64,6 @@ export function DocumentChat({ documentId }: DocumentChatProps) {
       userMessage,
       assistantMessage,
     ]);
-    setQuestion("");
     setError(null);
     setIsStreaming(true);
 
@@ -106,6 +105,9 @@ export function DocumentChat({ documentId }: DocumentChatProps) {
                   : message,
               ),
             );
+            // Clear only after Hono confirms a completed answer. A failed
+            // request leaves the original question available for a retry.
+            setQuestion("");
           },
           onError: setError,
         },

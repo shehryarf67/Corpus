@@ -447,3 +447,19 @@ question. The form prevents a second simultaneous request, reports stream
 errors, and uses AbortController to stop an active reader if the component
 unmounts. Citation chips are presentation-only for now; PDF navigation will be
 connected in a later step.
+
+Step 4i: connect real chat to the workspace
+============================================
+
+Removed the hard-coded example conversation, fake source chips, suggestion
+buttons, and inactive question input from the document workspace. The Server
+Component now renders DocumentChat with the owned document ID it already loaded.
+
+DocumentChat uses a normal form with a controlled text input and submit button.
+Pressing Enter in the single-line input submits through the form automatically.
+Empty questions and additional submissions during an active stream are blocked,
+and both the input and button show disabled behavior while waiting.
+
+The input now clears only when the done event confirms successful completion.
+It is not cleared at request start. This means a failed request leaves the
+original question in the input so the user can retry without retyping it.
