@@ -409,3 +409,41 @@ for live UI updates or the final returned value. It rejects normal HTTP errors,
 streamed error events, missing response bodies, malformed events, and streams
 that close before done. An optional AbortSignal lets a future chat component
 cancel reading when needed or when it unmounts.
+
+Step 4h: basic document chat client
+===================================
+
+Added DocumentChat as the Client Component that owns interactive chat state.
+It currently remains standalone and has not replaced the workspace's mock chat
+pane yet.
+
+The component stores messages, the input question, the current conversation ID,
+streaming state, and an error. On submit it immediately adds the user's message
+and one empty assistant message. It then calls streamQuery with the document ID,
+question, and existing conversation ID.
+
+Each token callback finds that assistant message by its stable ID and appends
+event.text to its content. This is answer accumulation. It is separate from the
+SSE parser's network buffer: the parser buffer reconstructs incomplete protocol
+frames, while message content is the text visibly shown to the user.
+
+When done arrives, the component replaces the entire accumulated assistant
+content with result.answer and attaches result.sources. The replacement matters
+because Hono validates citations after generation, so the authoritative done
+answer can differ from the raw text pieces already displayed.
+
+```text
+submit question
+-> add user message
+-> add empty assistant message
+-> token: append text to that assistant message
+-> token: append more text
+-> done: replace all accumulated text with done.answer
+-> attach final sources
+```
+
+The conversation event saves the server-created conversation ID for the next
+question. The form prevents a second simultaneous request, reports stream
+errors, and uses AbortController to stop an active reader if the component
+unmounts. Citation chips are presentation-only for now; PDF navigation will be
+connected in a later step.
