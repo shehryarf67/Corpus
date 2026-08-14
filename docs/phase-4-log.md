@@ -1031,3 +1031,164 @@ question form
 Highlighting is not involved in this chain. The page jump depends only on
 pageNumber. The later enhancement can independently use content to match PDF
 text-layer spans. A highlighting failure will therefore not break navigation.
+
+11. Citation text normalization and passage matching
+----------------------------------------------------
+
+Main files:
+
+```text
+web/src/lib/citation-matching.ts
+web/src/components/document-workspace-client.tsx
+web/src/components/pdf-viewer.tsx
+web/src/components/pdf-document.tsx
+web/src/app/globals.css
+```
+
+The backend answer cites QuerySource objects. source.content is the extracted
+chunk that supported the answer. We use that chunk as the source text, but we do
+not require the entire raw chunk to appear exactly in React-PDF's page DOM.
+
+Why raw equality is unreliable
+------------------------------
+
+The backend extraction pipeline and React-PDF text layer can represent the same
+visible sentence differently:
+
+```text
+chunk: quantization improves model performance
+page:  quantiza-\ntion improves   model performance
+```
+
+PDFs can also contain line breaks, multiple spaces, compatibility ligatures such
+as fi, different Unicode forms, smart punctuation, and text fragmented into many
+positioned spans. A chunk may include overlap or multiple paragraphs, so its
+complete text may not exist as one continuous string on the cited page.
+
+Shared workspace request
+------------------------
+
+DocumentWorkspaceClient.handleCitationSelect() now puts chunkId and content in
+the same PageNavigationRequest as pageNumber and requestId:
+
+```text
+{
+  pageNumber,
+  requestId,
+  chunkId,
+  content
+}
+```
+
+PdfViewer receives these as targetPage, targetPageRequestId, targetChunkId, and
+targetContent. It still performs scrollToPage(targetPage) independently. The
+same values are passed to PdfDocument only for the optional highlight attempt.
+
+Chunk normalization
+-------------------
+
+normalizeCitationText() in citation-matching.ts prepares backend chunk content.
+It applies Unicode NFKC compatibility normalization, expands known ligature
+characters, lowercases text, removes line-wrap hyphenation, converts punctuation
+and whitespace differences into single spaces, and keeps letters and numbers.
+
+Ordinary hyphens are not blindly joined. cross-encoder normalizes to the same
+two words on both sides. Only a hyphen directly followed by a chunk line break
+is treated as a wrapped word and joined.
+
+Rendered-page normalization with position mapping
+-------------------------------------------------
+
+PdfDocument's highlighting effect gets the target page wrapper from pageRefs and
+queries its .react-pdf__Page__textContent span elements. These are the actual
+positioned text spans produced by React-PDF.
+
+For every span it records:
+
+```text
+text            -> span.textContent
+sourceIndex     -> the span's index in the page array
+lineBreakBefore -> whether its visual top changed from the previous span
+```
+
+The visual top comparison matters for wrapped hyphenation. If one line ends in
+a hyphen and the next line starts with a lowercase letter, normalizePageFragments()
+joins the two normalized pieces without inserting a space.
+
+normalizePageFragments() returns:
+
+```text
+text          -> one normalized searchable page string
+sourceIndexes -> normalized character position to React-PDF span index
+```
+
+The mapping is required because normalization changes string lengths. A ligature
+can expand into two letters, many spaces can collapse into one, and a wrapped
+hyphen can disappear. We search normalized text, then use sourceIndexes to get
+back to the real spans that need CSS styling.
+
+Distinctive passage selection
+-----------------------------
+
+matchCitationPassage() normalizes the chunk and divides it into words. It tests
+candidate windows in this order:
+
+```text
+24 words -> 18 -> 12 -> 8 -> 6 -> 4
+```
+
+This prefers a meaningful portion of the chunk instead of requiring the full
+chunk to match. Longer windows and windows containing more non-common words get
+higher scores. A long phrase such as quantization policy network and task
+specific BERT network is safer than a generic phrase such as the results show.
+
+Every candidate is searched with word boundaries. A candidate is accepted only
+when it occurs exactly once on the target page. If text repeats, the matcher does
+not choose the first occurrence. It tries other longer or more distinctive
+windows. If no candidate becomes unique, it returns null and produces no
+highlight. Skipping an uncertain highlight is safer than marking the wrong text.
+
+Mapping the match back to spans
+-------------------------------
+
+When matchCitationPassage() returns normalized start and end positions,
+PdfDocument slices sourceIndexes across that range and creates a Set of matched
+span indexes. A Set prevents the same span being processed repeatedly when many
+matched characters came from it. Each resolved span receives the
+corpus-citation-highlight CSS class.
+
+globals.css gives that class a marker-colored background, outline, and rounded
+corners. Before every new attempt, PdfDocument removes the class from previous
+matches so only the selected citation stays highlighted.
+
+React-PDF may recreate text spans after a zoom. Page's
+onRenderTextLayerSuccess callback calls handleTextLayerRendered(). For the target
+page this increments textLayerRevision, causing the highlight effect to run
+again against the new spans.
+
+Graceful failure and complete flow
+----------------------------------
+
+Highlighting is best effort. Missing page spans, empty content, ambiguous text,
+or no sufficiently distinctive match causes the effect to return without adding
+a class. None of those paths undo or block page navigation.
+
+```text
+citation click
+-> selectCitation(source)
+-> handleCitationSelect(source)
+-> scroll target page using pageNumber
+-> pass chunk content to PdfDocument
+-> collect target page text spans
+-> normalize chunk content
+-> normalize page spans plus source-index map
+-> search distinctive candidate windows
+-> require a unique page occurrence
+-> map normalized range back to spans
+-> add corpus-citation-highlight class
+
+if any matching step fails:
+-> keep the successful page jump
+-> show no highlight
+-> never guess a location
+```

@@ -205,3 +205,12 @@ body {
   vertical-align: super;
   line-height: 0;
 }
+
+/* React-PDF creates these spans after rendering, so citation highlighting is
+   applied by class name rather than by React JSX. Navigation still works when
+   matching is uncertain and this class is never added. */
+.react-pdf__Page__textContent span.corpus-citation-highlight {
+  background: rgba(224, 162, 68, 0.34);
+  box-shadow: 0 0 0 1px rgba(224, 162, 68, 0.2);
+  border-radius: 2px;
+}

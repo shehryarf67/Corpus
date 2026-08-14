@@ -13,6 +13,8 @@ type DocumentWorkspaceClientProps = {
 type PageNavigationRequest = {
   pageNumber: number;
   requestId: number;
+  chunkId: string;
+  content: string;
 };
 
 /** Own the state shared between the sibling PDF and chat panes. */
@@ -34,6 +36,8 @@ export function DocumentWorkspaceClient({
     setPageRequest({
       pageNumber: source.pageNumber,
       requestId: nextRequestId.current,
+      chunkId: source.chunkId,
+      content: source.content,
     });
   }
 
@@ -48,6 +52,8 @@ export function DocumentWorkspaceClient({
           filename={filename}
           targetPage={pageRequest?.pageNumber}
           targetPageRequestId={pageRequest?.requestId}
+          targetChunkId={pageRequest?.chunkId}
+          targetContent={pageRequest?.content}
         />
       </section>
 

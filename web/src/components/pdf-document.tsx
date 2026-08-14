@@ -1,7 +1,12 @@
 "use client";
 
-import { useState, type RefObject } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
+import {
+  matchCitationPassage,
+  normalizePageFragments,
+  type CitationTextFragment,
+} from "@/lib/citation-matching";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
@@ -19,6 +24,10 @@ type PdfDocumentProps = {
   pageRefs: RefObject<Map<number, HTMLDivElement>>;
   onLoadSuccess: (numberOfPages: number) => void;
   onLoadError: (error: Error) => void;
+  highlightPage?: number | null;
+  highlightChunkId?: string;
+  highlightContent?: string;
+  highlightRequestId?: number;
 };
 
 export default function PdfDocument({
@@ -27,15 +36,97 @@ export default function PdfDocument({
   pageRefs,
   onLoadSuccess,
   onLoadError,
+  highlightPage,
+  highlightChunkId,
+  highlightContent,
+  highlightRequestId,
 }: PdfDocumentProps) {
   // PdfDocument needs this count to know how many Page components to create.
   // PdfViewer separately stores the same value for its toolbar and controls.
   const [numberOfPages, setNumberOfPages] = useState(0);
+  const [textLayerRevision, setTextLayerRevision] = useState(0);
 
   function handleDocumentLoad({ numPages }: { numPages: number }) {
     setNumberOfPages(numPages);
     onLoadSuccess(numPages);
   }
+
+  function handleTextLayerRendered(pageNumber: number) {
+    // Zooming recreates text-layer spans. Re-run matching when the currently
+    // cited page finishes rendering so its highlight is restored.
+    if (pageNumber === highlightPage) {
+      setTextLayerRevision((current) => current + 1);
+    }
+  }
+
+  useEffect(() => {
+    // Always remove the previous visual match first. Page navigation lives in
+    // PdfViewer and has already happened independently of this best-effort step.
+    for (const pageElement of pageRefs.current.values()) {
+      for (const span of pageElement.querySelectorAll(
+        ".corpus-citation-highlight",
+      )) {
+        span.classList.remove("corpus-citation-highlight");
+      }
+    }
+
+    if (
+      highlightPage == null ||
+      !highlightChunkId ||
+      !highlightContent
+    ) {
+      return;
+    }
+
+    const pageElement = pageRefs.current.get(highlightPage);
+    if (!pageElement) return;
+
+    const spans = Array.from(
+      pageElement.querySelectorAll<HTMLSpanElement>(
+        ".react-pdf__Page__textContent span",
+      ),
+    );
+    if (spans.length === 0) return;
+
+    let previousTop: number | null = null;
+    const fragments: CitationTextFragment[] = spans.map((span, sourceIndex) => {
+      const top = span.getBoundingClientRect().top;
+      const fragment = {
+        text: span.textContent ?? "",
+        sourceIndex,
+        // A visible top-position change tells us PDF.js moved to another line.
+        lineBreakBefore:
+          previousTop !== null && Math.abs(top - previousTop) > 2,
+      };
+      previousTop = top;
+      return fragment;
+    });
+
+    const normalizedPage = normalizePageFragments(fragments);
+    const match = matchCitationPassage(
+      highlightContent,
+      normalizedPage.text,
+    );
+
+    // Ambiguous or weak matches deliberately produce no highlight. The page
+    // jump still succeeded because it does not depend on this effect.
+    if (!match) return;
+
+    const matchedSpanIndexes = new Set(
+      normalizedPage.sourceIndexes.slice(match.start, match.end),
+    );
+
+    for (const sourceIndex of matchedSpanIndexes) {
+      spans[sourceIndex]?.classList.add("corpus-citation-highlight");
+    }
+  }, [
+    highlightChunkId,
+    highlightContent,
+    highlightPage,
+    highlightRequestId,
+    pageRefs,
+    textLayerRevision,
+  ]);
 
   return (
     <Document
@@ -71,6 +162,9 @@ export default function PdfDocument({
               // citation highlighting real text spans to target.
               renderTextLayer
               renderAnnotationLayer
+              onRenderTextLayerSuccess={() =>
+                handleTextLayerRendered(pageNumber)
+              }
             />
           </div>
         );

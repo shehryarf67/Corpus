@@ -13,12 +13,23 @@ type PdfViewerProps = {
     // Changes on every citation activation, including repeated clicks on a
     // citation for the same page, so the navigation effect runs every time.
     targetPageRequestId?: number
+    // Highlighting is an optional enhancement after navigation. The chunk ID
+    // identifies the request and content supplies text to match on that page.
+    targetChunkId?: string
+    targetContent?: string
 }
 
 export function PdfViewer(PdfViewerProps: PdfViewerProps) {
     // Set Url for the PDF file to be displayed in the viewer. 
     // This URL points to the Next.js API route that fetches the PDF from Hono.
-    const { documentId, filename, targetPage, targetPageRequestId } = PdfViewerProps
+    const {
+        documentId,
+        filename,
+        targetPage,
+        targetPageRequestId,
+        targetChunkId,
+        targetContent,
+    } = PdfViewerProps
     const fileUrl = `/api/documents/${encodeURIComponent(documentId)}/pdf`
 
     // State to manage the current page, total pages, zoom level, and any errors that occur while loading the PDF.
@@ -164,6 +175,10 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
                         pageRefs={pageRefs}
                         onLoadSuccess={handleLoadSuccess}
                         onLoadError={handleLoadError}
+                        highlightPage={targetPage}
+                        highlightChunkId={targetChunkId}
+                        highlightContent={targetContent}
+                        highlightRequestId={targetPageRequestId}
                     />
                 )}
             </div>
