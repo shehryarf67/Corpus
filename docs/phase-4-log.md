@@ -514,3 +514,520 @@ retry instead of presenting partial generated text as a real answer.
 User cancellation remains a third state. It can preserve partial text because
 the user deliberately stopped it, but the message is labelled stopped and
 explicitly says it was not finalized or citation-validated.
+
+Step 4m: citation source contract for PDF highlighting
+======================================================
+
+The existing QuerySource contract already carries the three values required by
+the citation viewer:
+
+```text
+chunkId    -> stable identity for the cited chunk
+pageNumber -> which rendered PDF page to open
+content    -> passage text to locate in that page's text layer
+```
+
+It also carries label, documentId, and similarity because those are useful for
+citation display, ownership/context, and diagnostics. They are metadata rather
+than PDF coordinates.
+
+The frontend does not use char_start or char_end for highlighting. Those offsets
+describe positions in our extracted and normalized document text, not reliable
+positions inside React-PDF's browser text spans. PDF extraction can alter spaces,
+line breaks, ligatures, columns, and fragment boundaries, so the offsets do not
+map safely back onto the visual page.
+
+The planned highlighting flow is therefore:
+
+```text
+click citation
+-> identify source by chunkId
+-> navigate to pageNumber
+-> normalize source.content and page text-layer text
+-> find the best matching passage
+-> style the matching text-layer spans
+```
+
+No functional code change was required for this step because QuerySource already
+has this shape and the Phase 4 frontend contains no character-offset dependency.
+
+Step 4n: accessible citation controls
+======================================
+
+Final sources already appeared underneath each completed assistant answer, but
+they were non-interactive span elements. They are now native buttons displaying
+the backend citation label and page number, for example S1 · Page 3.
+
+Native buttons are keyboard focusable and activate with Enter or Space without
+custom keyboard handlers. Each button also has an aria-label that announces its
+source label and page, visible focus styling, and aria-pressed styling for the
+currently selected citation.
+
+DocumentChat now exposes an optional onCitationSelect(source) callback. Selecting
+a citation updates its local selected state immediately. The upcoming shared
+workspace client can use the callback to pass source.pageNumber and source.content
+to the PDF viewer for navigation and text-layer highlighting. Keeping this as a
+callback avoids putting PDF behavior inside the chat component.
+
+Step 4o: citation page navigation
+=================================
+
+Added DocumentWorkspaceClient as the shared Client Component above the PDF and
+chat panes. The Next page remains a Server Component responsible for loading
+the owned document metadata. It passes serializable documentId and filename
+values into this client workspace, which owns interaction state between panes.
+
+When a citation button is activated, DocumentChat calls onCitationSelect with
+the complete QuerySource. DocumentWorkspaceClient checks pageNumber and creates
+a page navigation request. The request contains both the page number and an
+increasing request ID. The ID ensures clicking the same citation/page twice can
+trigger scrolling twice even though the page number itself has not changed.
+
+```text
+citation button
+-> DocumentChat.selectCitation(source)
+-> DocumentWorkspaceClient.handleCitationSelect(source)
+-> set { pageNumber, requestId }
+-> PdfViewer receives targetPage and targetPageRequestId
+-> navigation effect calls scrollToPage(targetPage)
+-> pageRefs finds that rendered page container
+-> scrollIntoView moves the PDF pane to the page
+```
+
+PdfDocument populated pageRefs while rendering each React-PDF Page. The map key
+is the one-based PDF page number and the value is its real wrapper div. PdfViewer
+clamps an incoming page to the valid 1..totalPages range before looking it up.
+After requesting the scroll, it updates currentPage on the next animation frame
+so the pager reflects the citation jump. Manual-scroll tracking still belongs to
+the later IntersectionObserver step.
+
+This navigation path uses only source.pageNumber. It does not wait for, call, or
+depend on passage text matching. Future highlighting will separately use
+source.content after the page jump, so a failed highlight cannot prevent the
+citation from opening the correct page.
+
+Detailed citation navigation revision notes
+---------------------------------------------
+
+Before this change, PdfViewerClient and DocumentChat were sibling components
+rendered directly by the Server Component page. The chat knew which citation
+was clicked, while the viewer owned page scrolling. Siblings cannot directly
+share local React state, and the Server Component cannot hold interactive
+useState state or receive a browser click callback.
+
+DocumentWorkspaceClient solves this by becoming the nearest shared Client
+Component parent:
+
+```text
+WorkspacePage (Server Component)
+-> loads owned document metadata
+-> passes documentId and filename
+-> DocumentWorkspaceClient (shared browser state)
+   -> PdfViewerClient
+   -> DocumentChat
+```
+
+The server page still performs initial data loading. It passes only serializable
+strings across the server/client boundary. Interactive citation state belongs
+inside DocumentWorkspaceClient because both child panes need it.
+
+DocumentChat's source button calls selectCitation(source). That function first
+stores source.chunkId in selectedCitationId, which updates aria-pressed and the
+button's selected styling. It then invokes the optional onCitationSelect callback
+with the complete QuerySource. DocumentChat does not import PdfViewer or perform
+DOM scrolling because those responsibilities belong to the viewer.
+
+DocumentWorkspaceClient supplies handleCitationSelect as that callback. It
+checks source.pageNumber before creating a request. A null page keeps the source
+button usable and selected but cannot produce a page jump. A valid page creates:
+
+```text
+{
+  pageNumber: source.pageNumber,
+  requestId: an increasing number
+}
+```
+
+React effects usually rerun when a dependency value changes. If the state held
+only pageNumber, clicking Page 3 again while Page 3 was still the target would
+set the same value and might not rerun navigation. requestId changes for every
+activation, so targetPageRequestId makes every click a distinct request.
+
+PdfViewerClient is still the browser-only dynamic import boundary for PDF.js.
+Its ComponentProps-based prop forwarding automatically passes targetPage and
+targetPageRequestId through to PdfViewer without duplicating the prop contract.
+
+PdfDocument creates one wrapper div for each React-PDF Page. Its callback ref
+adds that real DOM element to pageRefs when mounted and removes it when unmounted:
+
+```text
+pageRefs.current
+1 -> page 1 wrapper div
+2 -> page 2 wrapper div
+3 -> page 3 wrapper div
+```
+
+When targetPage or targetPageRequestId changes, PdfViewer's effect calls
+scrollToPage. The helper first waits until totalPages is known, clamps the
+requested value into 1 through totalPages, retrieves the wrapper from pageRefs,
+and calls scrollIntoView with smooth behavior and block start. If a citation is
+clicked while the PDF is still loading, the totalPages dependency changes after
+load and gives the effect another opportunity to perform the pending jump.
+
+The effect schedules currentPage on requestAnimationFrame after requesting the
+DOM scroll. This keeps the pager consistent with citation navigation without a
+synchronous state update inside the effect. The future IntersectionObserver is
+still needed to update currentPage when the user scrolls manually.
+
+Navigation and highlighting deliberately form separate layers:
+
+```text
+reliable base action:
+source.pageNumber -> find page ref -> scroll page
+
+optional enhancement later:
+source.content -> normalize text -> find text-layer match -> highlight spans
+```
+
+The base action contains no content matching and no char offsets. Therefore a
+spacing, ligature, extraction, or text-layer matching failure can prevent only
+the visual highlight; it cannot prevent the citation from opening its page.
+
+Frontend revision map for everything implemented today
+=======================================================
+
+This section reorganizes today's frontend work by runtime flow and names the
+specific files and functions involved. The chronological entries above explain
+when each decision was made. This section explains how the finished pieces now
+work together.
+
+1. Protected PDF request from browser to storage
+------------------------------------------------
+
+Main files:
+
+```text
+web/src/app/api/documents/[id]/pdf/route.ts
+server/src/routes/documents.ts
+server/src/lib/storage.ts
+```
+
+The browser requests the same-origin URL /api/documents/:id/pdf. Next recognizes
+the folder and route.ts automatically and runs its exported GET() function on
+the Next server. The browser never imports or executes this function directly.
+
+GET() awaits params to read id, reads the private API_BASE_URL, and uses
+cookies() from next/headers to serialize the incoming HttpOnly session cookie.
+It calls fetch() against Hono's /documents/:id/pdf route and forwards that
+cookie. This Next route is a proxy and not the authoritative auth check.
+
+Hono's documents router runs requireAuth, looks up the document with both its ID
+and the authenticated user ID, checks storage_key, and calls readPdf(). Missing,
+foreign, and physically missing PDFs all return 404 so ownership cannot be
+discovered. A successful response contains PDF bytes with application/pdf and
+inline Content-Disposition headers.
+
+Back in Next, GET() copies the PDF response status and useful headers, then
+returns response.body directly. It does not create another buffered PDF copy.
+If fetch cannot connect to Hono at all, the catch block returns 502. Normal Hono
+responses such as 401 or 404 do not throw from fetch and pass through normally.
+
+```text
+React-PDF
+-> GET /api/documents/:id/pdf
+-> Next GET()
+-> forward cookie to Hono
+-> requireAuth and ownership query
+-> readPdf(storage_key)
+-> stream PDF bytes back through Next
+```
+
+2. React-PDF browser boundary and worker setup
+----------------------------------------------
+
+Main files:
+
+```text
+web/src/components/pdf-viewer-client.tsx
+web/src/components/pdf-viewer.tsx
+web/src/components/pdf-document.tsx
+```
+
+PdfViewerClient is the browser-only boundary. PdfViewerWithoutSsr uses Next's
+dynamic() with ssr: false because PDF.js needs browser APIs such as Canvas,
+window, and Web Workers. The workspace can remain server-rendered without Next
+trying to execute PDF.js on the server.
+
+The dynamic import uses .then(module => module.PdfViewer) because PdfViewer is a
+named export. PdfViewerClient uses ComponentProps to derive its props from the
+loaded component and forwards them with {...props}. New viewer props therefore
+do not need to be manually duplicated in the wrapper.
+
+PdfDocument imports Document, Page, and pdfjs from react-pdf. It configures
+GlobalWorkerOptions.workerSrc in the same browser module that renders React-PDF.
+The web workspace has its own pinned pdfjs-dist version so React-PDF and its
+worker execute matching code.
+
+3. PDF loading, page rendering, and text layers
+-----------------------------------------------
+
+PdfViewer builds the protected file URL from documentId:
+
+```text
+/api/documents/encoded-document-id/pdf
+```
+
+It passes that URL into PdfDocument. React-PDF's Document component fetches and
+parses the file. PdfDocument.handleDocumentLoad() receives numPages, stores it
+locally for rendering, and calls PdfViewer's handleLoadSuccess() callback so the
+parent can update toolbar state.
+
+PdfDocument creates one Page component per page using Array.from(). PDF pages
+are one-based, so index 0 becomes pageNumber 1. Each Page is wrapped in a div
+with data-page-number and a callback ref. The callback stores mounted wrapper
+elements in pageRefs and deletes them when they unmount.
+
+Each Page renders three useful layers:
+
+```text
+canvas layer     -> visible PDF page
+text layer       -> selectable positioned text spans
+annotation layer -> links and PDF annotations
+```
+
+TextLayer.css and AnnotationLayer.css provide the positioning required by those
+layers. The backend extraction text and browser text layer are different things.
+Backend text powers RAG. Browser text spans power selection and later visual
+highlighting.
+
+4. PDF viewer state, pager, zoom, and page refs
+-----------------------------------------------
+
+PdfViewer owns currentPage, totalPages, zoom, and error state. Its main helpers
+are:
+
+```text
+handleLoadSuccess()       -> save total pages and clear load errors
+handleCurrentPageChange() -> update the toolbar page number
+handleLoadError()         -> show a safe viewer error
+zoomIn() and zoomOut()    -> clamp zoom between 75 and 200 percent
+scrollToPage()            -> clamp page, find its ref, call scrollIntoView
+goToPage()                -> toolbar navigation plus current-page update
+```
+
+Previous and Next call goToPage(). Buttons are disabled before the PDF loads and
+at the first or last page so invalid navigation cannot be requested. pageRefs is
+a useRef map because changing DOM references should not itself rerender React.
+
+Manual scrolling does not yet update currentPage. That still needs the planned
+IntersectionObserver. Toolbar clicks and citation jumps do update the pager.
+
+5. Browser-facing query streaming proxy
+----------------------------------------
+
+Main file:
+
+```text
+web/src/app/api/query/stream/route.ts
+```
+
+The browser POSTs JSON to /api/query/stream. Next automatically runs the exported
+POST() Route Handler on its server. POST() reads the request body, private
+API_BASE_URL, and HttpOnly cookies. It forwards the body and Cookie header to
+Hono's existing POST /query/stream endpoint.
+
+The Hono fetch result is named upstream because Hono is farther up the chain
+from Next's point of view. upstream.body is a ReadableStream. POST() returns
+that body directly with SSE headers. Calling upstream.text() or json() would
+consume the complete stream and make the browser wait until generation ended.
+
+```text
+browser POST
+-> Next POST()
+-> Hono requireAuth
+-> retrieval and answer generation
+-> Hono SSE events
+-> Next returns upstream.body
+-> browser receives events live
+```
+
+The browser never knows API_BASE_URL. Next's proxy.ts may cheaply check that a
+cookie exists for protected UI navigation, but Hono requireAuth remains the real
+session validation.
+
+6. SSE network decoding and frame parsing
+-----------------------------------------
+
+Main file:
+
+```text
+web/src/lib/query-stream.ts
+```
+
+streamQuery() performs the browser fetch because fetch supports POST plus a JSON
+body. EventSource was not used because it does not fit this POST request flow.
+streamQuery() checks response.ok and response.body before calling
+response.body.getReader().
+
+reader.read() returns Uint8Array network chunks. TextDecoder converts those
+bytes to text with stream: true so a multi-byte character split across reads is
+not corrupted. The local buffer is a protocol buffer, not an answer buffer.
+
+Network chunks and SSE frames do not have matching boundaries. One frame can be
+split across reads, and one read can contain multiple frames. streamQuery()
+appends decoded text to buffer, normalizes CRLF, splits complete frames on blank
+lines, and keeps the final incomplete piece for the next read.
+
+parseSseEvent() reads event: and data: lines from one complete frame. It ignores
+SSE comments, joins multiple data lines, parses the JSON, and combines the event
+name with its data. dispatchEvent() routes the typed result to the matching
+callback:
+
+```text
+conversation -> onConversation(conversationId)
+status       -> onStatus(status)
+token        -> onToken(text)
+done         -> onDone(final result)
+error        -> onError(message), then reject
+```
+
+streamQuery() resolves only after done and returns QueryStreamResult. It rejects
+HTTP failures, network failures, stream error events, malformed data, missing
+bodies, and a stream that closes without done. Its optional AbortSignal lets the
+chat terminate reader.read() and the underlying fetch.
+
+7. Chat submission and live answer state
+----------------------------------------
+
+Main file:
+
+```text
+web/src/components/document-chat.tsx
+```
+
+DocumentChat is a Client Component because it owns input, messages, streaming,
+errors, conversation state, refs, click handlers, and form submission.
+handleSubmit() prevents the browser's normal form navigation, trims the input,
+and refuses empty or simultaneous submissions.
+
+It creates a completed user ChatMessage and an empty processing assistant
+ChatMessage with stable IDs from createMessageId(). Both messages are inserted
+immediately, so the question and Processing... appear before the first token.
+
+handleSubmit() creates an AbortController and calls streamQuery(). The callback
+flow is:
+
+```text
+onConversation -> save ID for follow-up questions
+onToken        -> find assistant by ID, append text, mark streaming
+onDone         -> replace draft with done.answer, attach sources, mark done
+onError        -> store the safe error message
+```
+
+The visible assistant content is the answer buffer. It is separate from the SSE
+frame buffer in query-stream.ts. Functional setMessages(current => ...) updates
+are used because tokens arrive asynchronously and every append must use the
+latest message state.
+
+done.answer replaces token concatenation because backend citation validation can
+change the final result. The input clears only after done. If the request fails,
+the question remains available for retry.
+
+8. Processing, refusal, failure, and cancellation states
+--------------------------------------------------------
+
+Assistant messages move through explicit states:
+
+```text
+processing -> streaming -> done
+                     or -> stopped
+```
+
+A done event is always treated as a normal assistant response. This includes a
+grounded RAG refusal such as saying the document does not contain the answer. We
+do not guess whether an answer is an error by reading its wording.
+
+Technical failures are different. A failed fetch, bad HTTP response, malformed
+stream, incomplete stream, or SSE error means no authoritative done.answer was
+received. handleSubmit() removes that assistant placeholder and shows the error
+separately. This prevents a partial model draft from looking completed.
+
+stopActiveStream() aborts the current controller. The catch block recognizes an
+AbortError, preserves any partial content, and marks the message stopped with a
+warning that it was not finalized or citation-validated.
+
+startOver() aborts active work and clears messages, conversationId, question,
+error, citation selection, and streaming state. Clearing conversationId makes
+the next question create a fresh backend conversation. The useEffect cleanup
+also aborts when DocumentChat unmounts so an abandoned request cannot update it.
+
+9. Accessible citation rendering
+---------------------------------
+
+Final sources come from QueryStreamResult and are attached only during onDone.
+DocumentChat renders them below the authoritative assistant answer. Each source
+button displays source.label and source.pageNumber.
+
+The controls are native button elements instead of clickable spans. This gives
+keyboard focus plus Enter and Space activation automatically. aria-label tells
+assistive technology the source and page. aria-pressed and
+selectedCitationId show which citation is currently selected. Focus-visible
+styles make keyboard position visible.
+
+selectCitation() updates selectedCitationId and calls the optional
+onCitationSelect(source) callback. The chat owns citation presentation but does
+not import PDF logic.
+
+10. Shared workspace and citation page jumps
+--------------------------------------------
+
+Main files:
+
+```text
+web/src/app/documents/[id]/page.tsx
+web/src/components/document-workspace-client.tsx
+web/src/components/document-chat.tsx
+web/src/components/pdf-viewer-client.tsx
+web/src/components/pdf-viewer.tsx
+web/src/components/pdf-document.tsx
+```
+
+WorkspacePage remains a Server Component. loadDocument() fetches the
+ownership-scoped document response and maps backend 404 to notFound(). The page
+passes documentId and filename into DocumentWorkspaceClient.
+
+DocumentWorkspaceClient owns PageNavigationRequest because it is the nearest
+Client Component parent shared by chat and viewer. handleCitationSelect() reads
+source.pageNumber and ignores navigation when it is null. For a valid page it
+increments nextRequestId and stores pageNumber plus requestId.
+
+PdfViewer receives targetPage and targetPageRequestId. Its useEffect depends on
+both values and totalPages. It calls scrollToPage(), which retrieves the correct
+wrapper from pageRefs and smoothly scrolls it into view. requestId makes repeated
+clicks on the same page distinct. totalPages lets a pending request retry after
+the PDF finishes loading.
+
+The page jump then schedules handleCurrentPageChange() on the next animation
+frame so the toolbar reflects the cited page.
+
+The complete current frontend flow is:
+
+```text
+question form
+-> DocumentChat.handleSubmit()
+-> streamQuery()
+-> Next POST /api/query/stream
+-> Hono query pipeline and SSE
+-> token callbacks build visible answer
+-> done replaces answer and attaches sources
+-> citation button calls selectCitation()
+-> DocumentWorkspaceClient.handleCitationSelect()
+-> PdfViewer navigation effect
+-> scrollToPage()
+-> pageRefs lookup
+-> scrollIntoView()
+```
+
+Highlighting is not involved in this chain. The page jump depends only on
+pageNumber. The later enhancement can independently use content to match PDF
+text-layer spans. A highlighting failure will therefore not break navigation.

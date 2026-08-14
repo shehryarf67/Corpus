@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { DocumentChat } from "@/components/document-chat";
-import { PdfViewerClient } from "@/components/pdf-viewer-client";
+import { DocumentWorkspaceClient } from "@/components/document-workspace-client";
 import { TopBar, TopBarDivider } from "@/components/top-bar";
 import { getDocument, type DocumentResponse } from "@/lib/api";
 import { ApiError } from "@/lib/api-error";
@@ -23,20 +22,6 @@ async function loadDocument(documentId: string): Promise<DocumentResponse> {
     // them as 404s would hide a real outage behind a misleading message.
     throw error;
   }
-}
-
-function PaperPane({ document }: { document: DocumentResponse }) {
-  return (
-    <section
-      aria-label="Document"
-      className="min-w-0 min-h-[640px] overflow-hidden lg:min-h-0"
-    >
-      <PdfViewerClient
-        documentId={document.id}
-        filename={document.filename}
-      />
-    </section>
-  );
 }
 
 export default async function WorkspacePage(
@@ -63,10 +48,10 @@ export default async function WorkspacePage(
         </div>
       </TopBar>
 
-      <div className="flex flex-1 flex-col lg:grid lg:min-h-0 lg:grid-cols-[minmax(0,1.12fr)_minmax(0,0.88fr)]">
-        <PaperPane document={document} />
-        <DocumentChat documentId={document.id} />
-      </div>
+      <DocumentWorkspaceClient
+        documentId={document.id}
+        filename={document.filename}
+      />
     </div>
   );
 }

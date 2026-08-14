@@ -16,14 +16,21 @@ type ChatMessage = {
 
 type DocumentChatProps = {
   documentId: string;
+  onCitationSelect?: (source: QuerySource) => void;
 };
 
-export function DocumentChat({ documentId }: DocumentChatProps) {
+export function DocumentChat({
+  documentId,
+  onCitationSelect,
+}: DocumentChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [question, setQuestion] = useState("");
   const [conversationId, setConversationId] = useState<string>();
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedCitationId, setSelectedCitationId] = useState<string | null>(
+    null,
+  );
   const requestController = useRef<AbortController | null>(null);
   const nextMessageId = useRef(0);
 
@@ -51,7 +58,15 @@ export function DocumentChat({ documentId }: DocumentChatProps) {
     setConversationId(undefined);
     setQuestion("");
     setError(null);
+    setSelectedCitationId(null);
     setIsStreaming(false);
+  }
+
+  function selectCitation(source: QuerySource) {
+    setSelectedCitationId(source.chunkId);
+    // The chat owns citation presentation. A future shared workspace client
+    // can provide this callback to navigate/highlight the matching PDF page.
+    onCitationSelect?.(source);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -225,12 +240,16 @@ export function DocumentChat({ documentId }: DocumentChatProps) {
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {message.sources.map((source) => (
-                      <span
+                      <button
                         key={source.chunkId}
-                        className="rounded-[3px] border border-rule-strong px-2 py-1 font-mono text-[10.5px] text-graphite"
+                        type="button"
+                        onClick={() => selectCitation(source)}
+                        aria-pressed={selectedCitationId === source.chunkId}
+                        aria-label={`${source.label}, page ${source.pageNumber ?? "unknown"}`}
+                        className="cursor-pointer rounded-[3px] border border-rule-strong px-2 py-1 font-mono text-[10.5px] text-graphite transition-colors hover:border-marker-line hover:bg-marker-wash hover:text-bone focus-visible:border-marker-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marker-line aria-pressed:border-marker-line aria-pressed:bg-marker-wash aria-pressed:text-bone"
                       >
                         {source.label} · Page {source.pageNumber ?? "Unknown"}
-                      </span>
+                      </button>
                     ))}
                   </div>
                 </div>

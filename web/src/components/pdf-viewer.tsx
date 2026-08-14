@@ -10,12 +10,15 @@ type PdfViewerProps = {
     // A citation will later set this prop to request navigation from outside
     // the viewer. null/undefined means no programmatic navigation is pending.
     targetPage?: number | null
+    // Changes on every citation activation, including repeated clicks on a
+    // citation for the same page, so the navigation effect runs every time.
+    targetPageRequestId?: number
 }
 
 export function PdfViewer(PdfViewerProps: PdfViewerProps) {
     // Set Url for the PDF file to be displayed in the viewer. 
     // This URL points to the Next.js API route that fetches the PDF from Hono.
-    const { documentId, filename, targetPage } = PdfViewerProps
+    const { documentId, filename, targetPage, targetPageRequestId } = PdfViewerProps
     const fileUrl = `/api/documents/${encodeURIComponent(documentId)}/pdf`
 
     // State to manage the current page, total pages, zoom level, and any errors that occur while loading the PDF.
@@ -77,9 +80,18 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
     useEffect(() => {
         if (targetPage == null || totalPages === 0) return
         // This effect synchronizes an external prop with the scrollable DOM.
-        // IntersectionObserver will report the resulting visible page back.
-        scrollToPage(targetPage)
-    }, [scrollToPage, targetPage, totalPages])
+        const safePage = scrollToPage(targetPage)
+        if (safePage == null) return
+
+        // Update after the effect's synchronous work so the pager immediately
+        // reflects a citation jump. IntersectionObserver will later become the
+        // authoritative source for pages reached by manual scrolling.
+        const frameId = requestAnimationFrame(() => {
+            handleCurrentPageChange(safePage)
+        })
+
+        return () => cancelAnimationFrame(frameId)
+    }, [scrollToPage, targetPage, targetPageRequestId, totalPages])
 
     const previousDisabled = totalPages === 0 || currentPage <= 1
     const nextDisabled = totalPages === 0 || currentPage >= totalPages
