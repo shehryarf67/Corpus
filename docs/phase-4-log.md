@@ -1192,3 +1192,54 @@ if any matching step fails:
 -> show no highlight
 -> never guess a location
 ```
+
+12. Center the matched passage after highlighting
+-------------------------------------------------
+
+The highlight class was already applied to every matched React-PDF text span.
+The remaining behavior was a more precise scroll. Previously scrollToPage()
+opened the correct page, but the matched sentence could still sit near the
+bottom or outside the visible part of a long rendered page.
+
+After PdfDocument builds matchedSpanIndexes and adds
+corpus-citation-highlight, it reads the first index from the Set and resolves
+the corresponding real span:
+
+```text
+matchedSpanIndexes.values().next().value
+-> spans[firstMatchedIndex]
+-> firstMatchedSpan
+```
+
+A Set keeps insertion order, and sourceIndexes came from the normalized match
+range in reading order, so this is the first span belonging to the passage.
+
+PdfDocument schedules the DOM movement with requestAnimationFrame(), then calls:
+
+```text
+firstMatchedSpan.scrollIntoView({
+  behavior: smooth,
+  block: center,
+  inline: nearest
+})
+```
+
+block center places the passage around the vertical center of the PDF pane.
+inline nearest avoids unnecessary horizontal movement. Scheduling one animation
+frame allows the highlight classes and latest text-layer DOM to settle first.
+The effect cleanup cancels a pending frame if another citation is selected
+before it runs.
+
+There are now two deliberate navigation levels:
+
+```text
+level 1, always available:
+source.pageNumber -> PdfViewer.scrollToPage() -> open cited page
+
+level 2, only after a confident match:
+first highlighted text span -> scrollIntoView() -> center passage
+```
+
+If normalization or passage matching fails, level 2 never runs, but level 1 has
+already opened the correct page. Highlighting and precise scrolling therefore
+remain enhancements rather than requirements for basic citation navigation.

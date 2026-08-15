@@ -119,6 +119,24 @@ export default function PdfDocument({
     for (const sourceIndex of matchedSpanIndexes) {
       spans[sourceIndex]?.classList.add("corpus-citation-highlight");
     }
+
+    // Page navigation already provided a reliable fallback. Once matching
+    // succeeds, refine that jump by centering the first highlighted span.
+    const firstMatchedIndex = matchedSpanIndexes.values().next().value;
+    const firstMatchedSpan =
+      firstMatchedIndex === undefined ? undefined : spans[firstMatchedIndex];
+
+    if (!firstMatchedSpan) return;
+
+    const frameId = requestAnimationFrame(() => {
+      firstMatchedSpan.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+        inline: "nearest",
+      });
+    });
+
+    return () => cancelAnimationFrame(frameId);
   }, [
     highlightChunkId,
     highlightContent,
