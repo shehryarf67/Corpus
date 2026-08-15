@@ -49,8 +49,7 @@ export default async function WorkspacePage(
           </span>
           <span className="hidden font-mono text-[10.5px] whitespace-nowrap text-graphite-dim sm:inline">
             <span className="mr-1.5 inline-block h-[5px] w-[5px] rounded-full bg-marker align-middle" />
-            indexed · {document.chunkCount.toLocaleString("en-US")} chunks ·{" "}
-            {document.pageCount} pages
+            ready · {document.pageCount} pages
           </span>
         </div>
       </TopBar>

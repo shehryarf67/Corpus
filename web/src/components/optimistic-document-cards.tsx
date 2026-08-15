@@ -6,11 +6,11 @@ import { PagePreview } from "@/components/page-preview";
 
 function statusText(status: string): string {
   if (status === "uploading") return "uploading PDF...";
-  if (status === "pending") return "waiting to index...";
-  if (status === "parsing") return "reading PDF...";
-  if (status === "embedding") return "building search index...";
+  if (status === "pending") return "waiting to process...";
+  if (status === "parsing") return "preparing document...";
+  if (status === "embedding") return "preparing document...";
   if (status === "done") return "finishing...";
-  return "indexing failed";
+  return "processing failed";
 }
 
 export function OptimisticDocumentCards({
@@ -40,7 +40,7 @@ export function OptimisticDocumentCards({
             <PagePreview seed={document.localId} variant="blank" />
             <div className="absolute inset-0 grid place-items-center">
               <span className="font-mono text-[10.5px] tracking-[0.06em] text-graphite-dim">
-                {document.status === "uploading" ? "uploading..." : "indexing..."}
+                {document.status === "uploading" ? "uploading..." : "processing..."}
               </span>
             </div>
           </div>

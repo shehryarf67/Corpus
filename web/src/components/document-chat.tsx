@@ -218,8 +218,8 @@ export function DocumentChat({
       >
         {messages.length === 0 ? (
           <p className="m-auto max-w-xs text-center text-[13px] leading-6 text-graphite-dim">
-            Ask a question about this document. Answers will use its indexed
-            passages.
+            Ask a question about this document. Answers will use information
+            from the document.
           </p>
         ) : (
           messages.map((message) => (
@@ -341,7 +341,7 @@ export function DocumentChat({
         </div>
 
         <p className="mt-[9px] text-center font-mono text-[10px] tracking-[0.03em] text-graphite-dim">
-          answers are generated only from indexed passages
+          answers are based only on this document
         </p>
       </form>
     </section>

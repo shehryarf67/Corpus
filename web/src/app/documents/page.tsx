@@ -33,7 +33,7 @@ function StatusDot({ status }: { status: DocumentJobStatus | null }) {
 }
 
 function statusLine(document: DocumentResponse) {
-  if (document.status === "failed") return "couldn't be indexed";
+  if (document.status === "failed") return "couldn't be processed";
 
   // This is still an active backend status, not a failure. The worker may
   // finish later, but automatic browser polling has stopped for this job.
@@ -42,12 +42,12 @@ function statusLine(document: DocumentResponse) {
   }
 
   if (document.status === "pending" || document.status === null) {
-    return "waiting to index...";
+    return "waiting to process...";
   }
-  if (document.status === "parsing") return "reading PDF...";
-  if (document.status === "embedding") return "building search index...";
+  if (document.status === "parsing") return "preparing document...";
+  if (document.status === "embedding") return "preparing document...";
 
-  return `indexed · ${document.chunkCount.toLocaleString("en-US")} chunks · ${document.pageCount} pages`;
+  return `ready · ${document.pageCount} pages`;
 }
 
 /**
@@ -75,7 +75,7 @@ function Thumbnail({ document }: { document: DocumentResponse }) {
       {!isReady && (
         <div className="absolute inset-0 grid place-items-center">
           <span className="font-mono text-[10.5px] tracking-[0.06em] text-graphite-dim">
-            {document.status === "failed" ? "no preview" : "indexing..."}
+            {document.status === "failed" ? "no preview" : "processing..."}
           </span>
         </div>
       )}
@@ -107,7 +107,7 @@ function CardDetails({ document }: { document: DocumentResponse }) {
             line because it's asking for attention. */}
         {isFailed && document.error ? (
           <span className="font-mono text-[10.5px] leading-[1.5] text-graphite">
-            couldn&rsquo;t be indexed — {document.error}
+            couldn&rsquo;t be processed — {document.error}
           </span>
         ) : (
           <span className="truncate font-mono text-[10.5px] leading-[1.5] text-graphite-dim">
@@ -173,8 +173,8 @@ function EmptyState() {
           Add your first document.
         </h1>
         <p className="mx-auto mt-3 max-w-[42ch] font-serif text-[14.5px] leading-[1.66] text-graphite">
-          Corpus splits a PDF into structure-aware passages and indexes them, so
-          every answer can point back to the page it came from.
+          Corpus prepares your PDF so answers can point back to the page they
+          came from.
         </p>
         <div className="mt-7 flex justify-center">
           <UploadDialog />
@@ -183,7 +183,7 @@ function EmptyState() {
           <OptimisticDocumentCards realDocumentIds={[]} />
         </ul>
         <p className="mt-4 font-mono text-[10px] tracking-[0.03em] text-graphite-dim">
-          pdf only · indexing runs in the background
+          pdf only · processing continues in the background
         </p>
       </div>
     </div>
@@ -195,13 +195,9 @@ export default async function DocumentsPage() {
   // returns only documents owned by the user established from that session.
   const { documents } = await getDocuments();
 
-  // Only ready documents contribute passages, so this counts what's actually
-  // searchable rather than what's been uploaded.
-  const indexedPassages = documents.reduce(
-    (total, document) =>
-      total + (document.status === "done" ? document.chunkCount : 0),
-    0,
-  );
+  const readyDocuments = documents.filter(
+    (document) => document.status === "done",
+  ).length;
   const realDocumentIds = documents.map((document) => document.id);
   const initialJobs = documents.flatMap((document) => {
     const isActive =
@@ -254,7 +250,7 @@ export default async function DocumentsPage() {
               <p className="mt-2 font-mono text-[10.5px] text-graphite-dim">
                 {documents.length}{" "}
                 {documents.length === 1 ? "document" : "documents"} ·{" "}
-                {indexedPassages.toLocaleString("en-US")} passages indexed
+                {readyDocuments} ready
               </p>
             </div>
             {/* Anchored in the header so it stays put as the list grows. */}

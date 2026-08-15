@@ -1509,3 +1509,48 @@ When Docker/Postgres is available, run:
 npm run migrate -w server
 npx tsx --env-file=server/.env --test --test-concurrency=1 server/test/conversation-history.integration.test.ts
 ```
+
+15. Keep user-facing progress language simple
+---------------------------------------------
+
+Audited visible frontend copy for implementation terms such as vector search,
+keyword retrieval, RRF, reranking, embeddings, chunks, indexed passages, and
+search indexes.
+
+These terms remain in TypeScript types, backend status values, tests, comments,
+and technical logs because developers need precise names. They were removed
+from product-facing text because users need to know what the application is
+doing for them, not which retrieval algorithm performs it.
+
+Visible states now use language such as:
+
+```text
+uploading PDF
+waiting to process
+preparing document
+processing
+ready
+processing failed
+Processing...
+answers are based only on this document
+```
+
+The document workspace header now shows ready plus the page count rather than
+the internal chunk count. Library cards show ready plus pages. The library
+summary shows how many documents are ready instead of how many passages were
+indexed. Retry indexing became Retry processing.
+
+The login screen no longer advertises retrieval-augmented Q&A or combined vector
+and keyword search. It explains the product behavior directly: Corpus reads PDFs,
+answers from the document, and lets the user open supporting text through
+citations.
+
+The chat does not display fake or overly technical retrieval stages. The backend
+currently emits conversation, generating, finalizing, token, done, and error SSE
+events, while vector retrieval, keyword retrieval, RRF, and reranking happen
+before streaming begins. Since there are no real frontend events for those
+individual stages, the UI does not claim that they are occurring in real time.
+
+Technical understanding remains visible in the codebase, architecture logs,
+tests, and portfolio documentation. The normal user interface stays focused on
+progress, answers, sources, pages, and recoverable errors.

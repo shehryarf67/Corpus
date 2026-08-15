@@ -40,7 +40,7 @@ export function RetryDocumentButton({ documentId }: { documentId: string }) {
         disabled={pending}
         className="cursor-pointer rounded-[3px] border border-rule-strong px-3 py-1.5 font-mono text-[10.5px] text-graphite transition hover:border-marker-line hover:text-bone disabled:cursor-wait disabled:opacity-50"
       >
-        {pending ? "Retrying..." : "Retry indexing"}
+        {pending ? "Retrying..." : "Retry processing"}
       </button>
       {error && (
         <p role="alert" className="mt-2 text-[11px] leading-[1.4] text-marker">

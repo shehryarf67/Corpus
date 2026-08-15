@@ -155,7 +155,7 @@ export function IngestionJobPollingProvider({
 
         if (timedOutIds.size > 0) {
           setNotice(
-            "Indexing is taking longer than expected. Polling stopped; refresh the library later to check again.",
+            "Processing is taking longer than expected. Refresh the library later to check again.",
           );
         }
 
@@ -187,8 +187,8 @@ export function IngestionJobPollingProvider({
             if (result.job.status === "failed") {
               setNotice(
                 result.job.error
-                  ? `Indexing failed: ${result.job.error}`
-                  : "Indexing failed. Open the document card for details.",
+                  ? `Processing failed: ${result.job.error}`
+                  : "Processing failed. Open the document card for details.",
               );
             }
           }

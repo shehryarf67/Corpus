@@ -18,7 +18,7 @@ export default async function LoginPage() {
       {/* Vertical spine, like the stamp down the edge of a bound paper. */}
       <div className="flex items-center justify-center border-r border-rule bg-chrome">
         <p className="rotate-180 font-mono text-[10.5px] tracking-[0.22em] whitespace-nowrap text-graphite-dim uppercase [writing-mode:vertical-rl]">
-          corpus · retrieval-augmented document q&a
+          corpus · document answers with citations
         </p>
       </div>
 
@@ -41,10 +41,9 @@ export default async function LoginPage() {
               Abstract
             </div>
             <p className="mt-2.5 font-serif text-[14.5px] leading-[1.66] text-read">
-              Corpus indexes your PDFs into structure-aware passages, retrieves
-              with combined vector and keyword search, and answers only from
-              what it finds. Click any citation to land on the exact sentence in
-              the source.
+              Corpus reads your PDFs and answers using information from the
+              document. Click any citation to open the supporting text in the
+              original source.
             </p>
           </div>
 
