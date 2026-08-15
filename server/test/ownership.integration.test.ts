@@ -5,6 +5,7 @@ import { Documents, Jobs, pool } from '../src/lib/db.js'
 import { documentsRoute } from '../src/routes/documents.js'
 import { jobsRoute } from '../src/routes/jobs.js'
 import { queryRoute } from '../src/routes/query.js'
+import { savePdf } from '../src/lib/storage.js'
 import {
   createTestSessionCookie,
   createTestUser,
@@ -19,12 +20,15 @@ test('foreign documents and jobs are hidden behind 404 responses', async () => {
   const stranger = await createTestUser('ownership-stranger')
   const ownerCookie = await createTestSessionCookie(owner.id)
   const strangerCookie = await createTestSessionCookie(stranger.id)
+  const storageKey = await savePdf(Buffer.from('%PDF-1.4\n%%EOF'))
 
   const document = await Documents.create(
     owner.id,
     'Private ownership test',
     'private.pdf',
-    'application/pdf'
+    'application/pdf',
+    {},
+    storageKey
   )
   if (!document) throw new Error('Failed to create ownership test document')
   const job = await Jobs.create(document.id)
@@ -40,6 +44,9 @@ test('foreign documents and jobs are hidden behind 404 responses', async () => {
       headers: { Cookie: strangerCookie },
     })
     const foreignJob = await app.request(`/jobs/${job.id}`, {
+      headers: { Cookie: strangerCookie },
+    })
+    const foreignPdf = await app.request(`/documents/${document.id}/pdf`, {
       headers: { Cookie: strangerCookie },
     })
     const foreignDelete = await app.request(`/documents/${document.id}`, {
@@ -72,12 +79,13 @@ test('foreign documents and jobs are hidden behind 404 responses', async () => {
     assert.deepEqual(
       [
         foreignDocument.status,
+        foreignPdf.status,
         foreignJob.status,
         foreignDelete.status,
         foreignQuery.status,
         foreignStream.status,
       ],
-      [404, 404, 404, 404, 404]
+      [404, 404, 404, 404, 404, 404]
     )
     assert.ok(await Documents.getById(document.id))
 
@@ -87,8 +95,13 @@ test('foreign documents and jobs are hidden behind 404 responses', async () => {
     const ownJob = await app.request(`/jobs/${job.id}`, {
       headers: { Cookie: ownerCookie },
     })
+    const ownPdf = await app.request(`/documents/${document.id}/pdf`, {
+      headers: { Cookie: ownerCookie },
+    })
     assert.equal(ownDocument.status, 200)
     assert.equal(ownJob.status, 200)
+    assert.equal(ownPdf.status, 200)
+    assert.equal(ownPdf.headers.get('Content-Type'), 'application/pdf')
 
     const ownDelete = await app.request(`/documents/${document.id}`, {
       method: 'DELETE',

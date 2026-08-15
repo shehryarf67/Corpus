@@ -1672,3 +1672,62 @@ successfully. conversation-history.integration.test.ts passed 1/1, confirming
 latest owned history, chronological messages, source restoration, empty history,
 and foreign-document 404 behavior. Web unit tests passed 13/13, both TypeScript
 checks passed, and web ESLint passed.
+
+18. Phase 4 final verification
+------------------------------
+
+The ownership integration test now covers the protected PDF endpoint as well as
+document, job, delete, normal query, and stream query access. The owner receives
+the real PDF with Content-Type application/pdf. A different authenticated user
+receives the same 404 used for a missing resource when requesting the PDF or
+querying the document. This confirms that ownership is enforced without leaking
+whether another user's resource exists.
+
+The automated verification results were:
+
+```text
+server unit tests                 50 / 50 passed
+server database integration      23 / 23 passed
+web SSE and citation unit tests  13 / 13 passed
+real reranker model test          1 / 1 passed
+real Ollama stream parser test    1 / 1 passed
+real query stream end to end      1 / 1 passed
+server TypeScript                 passed
+web TypeScript                    passed
+web ESLint                        passed
+web production build              passed
+```
+
+The browser test used a temporary account and a copied ready PDF, chunks, and
+embeddings. The temporary user, document, conversations, messages, chunks,
+session, and copied PDF were removed afterward.
+
+The real browser flow confirmed login, the ready-document library card, the
+workspace, all seven PDF canvases, all seven text layers, immediate display of
+the user question, the Processing state, and a correct streamed answer. It also
+confirmed that a citation button always moves the viewer to its stored page.
+
+Two real-model/browser problems remain:
+
+1. The local Ollama model returned a correct answer without an [S1] style label.
+   SSE citation validation therefore returned no source buttons. This is the
+   known streaming limitation: unlike the non-streaming path, it cannot retry
+   after tokens have already been shown.
+2. A second real query reached the generation timeout and produced the separate
+   Query stream failed alert. The UI correctly removed the unfinished assistant
+   message instead of leaving a permanent partial answer.
+
+A deterministic persisted source was used to test the downstream citation UI.
+The source chip rendered and clicking it changed the PDF pager to the correct
+page, but the text did not highlight. Browser inspection found a likely render
+loop in PdfDocument: onRenderTextLayerSuccess updates textLayerRevision, that
+state update rerenders the Page, and rendering the text layer fires the callback
+again. Production code was not changed during this test-only step. The loop and
+the SSE citation reliability issue should be fixed before calling the complete
+browser happy path fully green.
+
+While the full development stack was running, the worker also claimed an older
+pending ingestion job whose stored PDF no longer existed. It correctly marked
+that job failed with ENOENT. This was unrelated to the temporary browser fixture,
+but it confirms that a database job can outlive its storage file and should be
+shown as a recoverable ingestion failure in the library.
