@@ -1755,3 +1755,34 @@ the React component again, so text-layer completion cannot start a render loop.
 
 After the refactor, web TypeScript, ESLint, and all 13 SSE/citation unit tests
 passed.
+
+20. Streaming citation correction
+---------------------------------
+
+The streaming service used to validate the completed token buffer once and then
+discard every source when Ollama omitted [S1] labels. The answer could be correct
+but the frontend received an empty sources array, leaving no citation buttons.
+
+streamPreparedQuery() now keeps normal token streaming unchanged. After the
+model finishes, it enters finalizing and validates the complete answer. Missing
+or invalid labels trigger one non-streaming citation-correction request using
+buildCitationRetryMessages(). This request receives the original grounded
+messages, the answer already shown, and only the valid source labels.
+
+The corrected response is used primarily as structured source selection. If its
+wording is the same after ignoring citation labels, punctuation, whitespace, and
+case, done.answer remains the exact streamed prose. Only done.sources changes,
+so source chips appear without visually replacing the answer. If Ollama really
+changes the wording, the corrected response becomes the authoritative done
+answer and the frontend performs its existing one-time replacement.
+
+If the correction itself fails, times out, or still returns no usable label, the
+completed answer is not turned into a stream error. The service falls back to
+the chunks that were genuinely retrieved and supplied as generation context.
+Those sources are saved with the assistant message and sent in done, preventing
+a formatting failure in the small local model from deleting all source access.
+
+The integration test confirms that an uncited streamed answer causes exactly one
+correction call, keeps its already-visible prose unchanged, returns S1 in the
+done event, and persists that same source with conversation history. Server
+TypeScript and all five focused stream service/route tests passed.

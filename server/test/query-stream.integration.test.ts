@@ -129,6 +129,95 @@ test('streamPreparedQuery emits events in order and saves one complete answer', 
   }
 })
 
+test('streamPreparedQuery corrects missing citations without replacing unchanged streamed prose', async () => {
+  let documentId: string | undefined
+
+  try {
+    const document = await Documents.create(
+      testUserId,
+      'Streaming citation correction test',
+      'streaming-citation-test.pdf',
+      'application/pdf'
+    )
+    assert.ok(document)
+    documentId = document.id
+
+    const conversation = await Conversations.create(document.id)
+    assert.ok(conversation)
+    await Messages.create(conversation.id, 'user', 'Which planet is red?')
+
+    const source: ContextSource = {
+      label: 'S1',
+      chunkId: 'chunk-one',
+      documentId: document.id,
+      pageNumber: 1,
+      content: 'Mars is known as the Red Planet.',
+      similarity: 1,
+    }
+    let requestNumber = 0
+
+    globalThis.fetch = async () => {
+      requestNumber += 1
+
+      if (requestNumber === 1) {
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(
+                encoder.encode(
+                  '{"message":{"content":"Mars is known as the Red Planet."},"done":false}\n'
+                )
+              )
+              controller.enqueue(
+                encoder.encode('{"message":{"content":""},"done":true}\n')
+              )
+              controller.close()
+            },
+          }),
+          { status: 200 }
+        )
+      }
+
+      return Response.json({
+        message: { content: 'Mars is known as the Red Planet [S1].' },
+      })
+    }
+
+    const events = await collectEvents({
+      conversationId: conversation.id,
+      messages: [{ role: 'user', content: 'Which planet is red?' }],
+      sources: [source],
+    })
+
+    assert.equal(requestNumber, 2)
+    const streamedAnswer = events
+      .filter((event) => event.type === 'token')
+      .map((event) => event.text)
+      .join('')
+    const done = events.at(-1)
+
+    assert.equal(streamedAnswer, 'Mars is known as the Red Planet.')
+    assert.equal(done?.type, 'done')
+    if (done?.type === 'done') {
+      // The visible prose stays byte-for-byte stable; the corrected citation
+      // selection arrives separately for source-chip rendering.
+      assert.equal(done.answer, streamedAnswer)
+      assert.deepEqual(done.sources.map((item) => item.label), ['S1'])
+    }
+
+    const storedMessages = await Messages.getByConversationId(conversation.id)
+    assert.equal(storedMessages[1]?.content, streamedAnswer)
+    assert.deepEqual(
+      storedMessages[1]?.sources.map((item) => item.label),
+      ['S1']
+    )
+  } finally {
+    if (documentId) {
+      await pool.query('DELETE FROM documents WHERE id = $1', [documentId])
+    }
+  }
+})
+
 test('streamPreparedQuery handles no sources without calling Ollama', async () => {
   let documentId: string | undefined
 
