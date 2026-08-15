@@ -17,7 +17,7 @@ type PageNavigationRequest = {
   pageNumber: number;
   requestId: number;
   chunkId: string;
-  content: string;
+  content?: string;
 };
 
 /** Own the state shared between the sibling PDF and chat panes. */
@@ -42,7 +42,10 @@ export function DocumentWorkspaceClient({
       pageNumber: source.pageNumber,
       requestId: nextRequestId.current,
       chunkId: source.chunkId,
-      content: source.content,
+      // The full chunk remains available in the source preview, but only the
+      // backend-selected supporting passage is precise enough to highlight.
+      // Undefined keeps page navigation working without marking unrelated text.
+      content: source.highlightText ?? undefined,
     });
   }
 

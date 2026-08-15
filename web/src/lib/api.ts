@@ -69,6 +69,7 @@ export type PersistedConversationMessage = {
     documentId: string;
     pageNumber: number | null;
     content: string;
+    highlightText?: string | null;
     similarity: number | null;
   }>;
   createdAt: string;

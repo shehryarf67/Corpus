@@ -203,6 +203,7 @@ test('streamPreparedQuery corrects missing citations without replacing unchanged
       // selection arrives separately for source-chip rendering.
       assert.equal(done.answer, streamedAnswer)
       assert.deepEqual(done.sources.map((item) => item.label), ['S1'])
+      assert.equal(done.sources[0]?.highlightText, source.content)
     }
 
     const storedMessages = await Messages.getByConversationId(conversation.id)

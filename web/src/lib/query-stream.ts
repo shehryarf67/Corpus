@@ -6,6 +6,7 @@ export type QuerySource = {
   documentId: string;
   pageNumber: number | null;
   content: string;
+  highlightText?: string | null;
   similarity: number | null;
 };
 

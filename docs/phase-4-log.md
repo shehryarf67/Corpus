@@ -1786,3 +1786,64 @@ The integration test confirms that an uncited streamed answer causes exactly one
 correction call, keeps its already-visible prose unchanged, returns S1 in the
 done event, and persists that same source with conversation history. Server
 TypeScript and all five focused stream service/route tests passed.
+
+21. Passage-level citation highlighting
+---------------------------------------
+
+Highlighting previously received source.content, which is the entire retrieved
+chunk. A chunk can contain several paragraphs, table headings, and the actual
+supporting sentence. The browser matcher therefore found text from the correct
+chunk but could mark a distinctive unrelated heading instead of the evidence
+used by the answer.
+
+ContextSource, StoredMessageSource, and the frontend source contracts now support
+an optional highlightText field. content still means the complete chunk used for
+generation and source previews. highlightText means the smaller passage selected
+for visual PDF highlighting. Since message sources are JSONB, this did not need a
+new database column and old messages remain compatible without the field.
+
+citation-passages.ts performs the selection after final citation validation. It
+maps each [S#] label to the sentence containing that cited claim, splits the
+source chunk into sentence, neighbouring-sentence, and short-paragraph candidates,
+then scores each candidate using meaningful word coverage and precision. Exact
+numbers receive extra weight so numerical answers choose the right result row or
+sentence. A minimum confidence threshold returns null when no passage is safe.
+
+Both queryConversation() and streamPreparedQuery() call
+selectCitationPassages() before saving and returning their final sources. The
+streaming path uses the internally corrected labelled answer for claim mapping,
+even when the already-streamed prose remains visually unchanged.
+
+DocumentWorkspaceClient now passes source.highlightText to the PDF viewer instead
+of source.content. If highlightText is absent or null, citation clicking still
+navigates to the stored page but deliberately applies no highlight. This keeps
+the feature fail-soft without painting unrelated text.
+
+Tests cover choosing supporting prose over table headings, matching the correct
+numeric passage including decimal values, refusing a low-confidence match, and
+leaving unlabelled fallback retrieval sources unhighlighted. All 54 server unit
+tests, five focused database/stream tests, both TypeScript checks, web ESLint, and
+all 13 frontend unit tests passed.
+
+Passage-source verification follow-up
+-------------------------------------
+
+A real new answer still produced highlightText null. Database inspection showed
+this was intentional rather than a frontend failure: the answer listed flood,
+conflict displacement, drought, and winterization scenarios but Ollama attached
+S4, whose chunk contained none of those details. Searching only inside the cited
+chunk could not find honest supporting text, so the confidence guard correctly
+fell back to page-only navigation.
+
+selectCitationPassages() now verifies each cited claim against every chunk that
+was genuinely present in the five-source generation context. If another context
+chunk contains the strongest confident passage, the citation keeps its visible
+label but its chunk ID, page, complete source content, and highlightText are
+reassigned to that actual evidence. If none of the supplied chunks support the
+claim, highlighting remains disabled instead of hiding a hallucination behind an
+unrelated mark.
+
+A regression test now covers a model attaching S4 to a claim that is actually
+supported by S2. The result retains visible label S4 while navigating to and
+highlighting S2's supporting chunk and page. All 55 server unit tests, four
+focused stream integration tests, and server TypeScript passed.

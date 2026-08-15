@@ -7,6 +7,7 @@ import {
   buildCitationRetryMessages,
 } from '../lib/prompt.js'
 import { validateCitations } from '../lib/citations.js'
+import { selectCitationPassages } from '../lib/citation-passages.js'
 import { fuseWithRRF } from '../lib/rrf.js'
 import { rerankChunks } from '../lib/reranker.js'
 import { rewriteQuestion } from '../lib/rewrite.js'
@@ -186,16 +187,22 @@ export async function queryConversation(
     )
   }
 
+  const highlightedSources = selectCitationPassages(
+    validated.answer,
+    validated.sources,
+    prepared.sources
+  )
+
   await Messages.create(
     prepared.conversationId,
     'assistant',
     validated.answer,
-    validated.sources
+    highlightedSources
   )
 
   return {
     conversationId: prepared.conversationId,
     answer: validated.answer,
-    sources: validated.sources,
+    sources: highlightedSources,
   }
 }

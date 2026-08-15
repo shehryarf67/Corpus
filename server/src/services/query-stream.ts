@@ -1,4 +1,5 @@
 import { validateCitations } from '../lib/citations.js'
+import { selectCitationPassages } from '../lib/citation-passages.js'
 import type { ContextSource } from '../lib/context.js'
 import { Messages } from '../lib/db.js'
 import { chat, chatStream } from '../lib/generation.js'
@@ -110,6 +111,7 @@ export async function* streamPreparedQuery(
   }
 
   let validated = validateCitations(rawAnswer, prepared.sources)
+  let citationAnswer = validated.answer
 
   // Tokens have already reached the browser, so do not stream a second answer.
   // Instead, ask once for corrected labels and use that response to choose the
@@ -127,6 +129,10 @@ export async function* streamPreparedQuery(
       const corrected = validateCitations(correctedAnswer, prepared.sources)
 
       if (corrected.sources.length > 0) {
+        // Keep the labelled correction internally even when its prose is not
+        // sent to the browser. It tells passage selection which claim used each
+        // source label.
+        citationAnswer = corrected.answer
         // Usually the correction only adds [S#] markers. Keep the prose already
         // visible in the browser in that case, and update only its source chips.
         // If Ollama genuinely rewrote the wording, done.answer remains the
@@ -172,12 +178,18 @@ export async function* streamPreparedQuery(
     )
   }
 
+  const highlightedSources = selectCitationPassages(
+    citationAnswer,
+    validated.sources,
+    prepared.sources
+  )
+
   // Do not save one row per token. Save only the complete validated answer.
   await Messages.create(
     prepared.conversationId,
     'assistant',
     validated.answer,
-    validated.sources
+    highlightedSources
   )
 
   // done means generation, validation, and database persistence all succeeded.
@@ -185,6 +197,6 @@ export async function* streamPreparedQuery(
     type: 'done',
     conversationId: prepared.conversationId,
     answer: validated.answer,
-    sources: validated.sources,
+    sources: highlightedSources,
   }
 }
