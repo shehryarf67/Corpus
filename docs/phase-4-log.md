@@ -1243,3 +1243,75 @@ first highlighted text span -> scrollIntoView() -> center passage
 If normalization or passage matching fails, level 2 never runs, but level 1 has
 already opened the correct page. Highlighting and precise scrolling therefore
 remain enhancements rather than requirements for basic citation navigation.
+
+13. Unit tests for citation matching and SSE parsing
+----------------------------------------------------
+
+Added a web test command:
+
+```text
+npm run test:unit -w web
+```
+
+The command runs TypeScript Node tests through tsx. The test files live beside
+the pure frontend helpers they verify:
+
+```text
+web/src/lib/citation-matching.test.ts
+web/src/lib/query-stream.test.ts
+```
+
+Citation normalization and matching tests
+-----------------------------------------
+
+The citation suite verifies seven cases:
+
+```text
+normal text       -> a distinctive passage is found
+multiple spaces   -> collapse to one searchable space
+line breaks       -> normalize like ordinary spaces
+wrapped hyphen    -> quantiza- plus newline plus tion becomes quantization
+ligatures         -> fi, ffi, and fl compatibility forms expand correctly
+repeated passage  -> ambiguous occurrence returns null
+no match          -> unrelated page and chunk return null
+```
+
+The wrapped-hyphen test uses normalizePageFragments() with two different source
+span indexes and a visual line break. It confirms that backend chunk
+normalization and rendered-page normalization produce the same searchable text.
+
+SSE parser tests
+----------------
+
+The SSE suite verifies six required transport cases:
+
+```text
+one complete frame     -> parseSseEvent returns the token event
+frame split over reads -> streamQuery reconstructs split event and JSON bytes
+many frames in one read-> callbacks run in protocol order
+malformed JSON         -> parser throws instead of accepting invalid data
+done event             -> authoritative answer and source data are returned
+error event            -> onError runs and streamQuery rejects
+```
+
+streamingResponse() builds a real ReadableStream of Uint8Array chunks with
+TextEncoder. withMockFetch() temporarily replaces browser fetch and restores it
+in finally. This lets the tests exercise the real response.body.getReader(),
+TextDecoder, protocol buffer, parseSseEvent(), dispatchEvent(), and streamQuery()
+flow without contacting Next or Hono.
+
+The split-frame test deliberately cuts one event inside the data field and JSON
+string. The multiple-events test puts conversation, status, token, and done into
+one network chunk. Together they prove that network read boundaries do not need
+to match SSE frame boundaries.
+
+Test result on 2026-08-15:
+
+```text
+13 tests
+13 passed
+0 failed
+
+ESLint passed
+TypeScript noEmit check passed
+```
