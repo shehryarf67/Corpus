@@ -1847,3 +1847,48 @@ A regression test now covers a model attaching S4 to a claim that is actually
 supported by S2. The result retains visible label S4 while navigating to and
 highlighting S2's supporting chunk and page. All 55 server unit tests, four
 focused stream integration tests, and server TypeScript passed.
+
+22. Table-aware PDF layout and chunking
+---------------------------------------
+
+PDF.js extraction now keeps each text run's rendered width. groupIntoLines()
+uses x plus width to measure the empty horizontal gap before the next run. Runs
+separated only by ordinary word spacing remain one cell, while a large gap starts
+a new LineCell with its own text, minX, and maxX.
+
+Table detection happens in layout.ts after line construction and column reading
+order, while cell x positions still exist. A candidate row needs at least three
+cells. This avoids confusing normal two-column page prose with a table. Several
+consecutive candidate rows must have at least three aligned cell starts, stay on
+the same page, and remain within a normal row gap. Numeric cells are a strong
+table clue, while short aligned text allows a header row to join the numeric rows
+below it.
+
+groupIntoSections() replaces plain paragraph-only grouping. It keeps ordinary
+lines in text sections and flushes them before a detected table. Table rows join
+cells with ` | ` and rows with a newline:
+
+```text
+Model | Size | Accuracy
+BERT | 324 | 93.5
+Q-BERT | 30 | 92.5
+```
+
+layoutText() turns these sections into heading, paragraph, or table blocks. The
+existing page-relative character offsets continue across all three block types.
+
+chunk.ts treats a table as a hard chunk boundary. It flushes prose before the
+table, stores a small table as its own chunk, and starts fresh afterward. An
+oversized table splits by complete rows instead of sentence boundaries. Every
+piece repeats the first row as its header so values keep their column meaning.
+An unusually large single row falls back to word packing while still respecting
+the 500-token maximum.
+
+This improves future ingestion only. Existing chunks in Postgres do not change
+until their PDFs are re-ingested.
+
+Tests cover aligned three-cell table detection, rejection of ordinary two-column
+prose, real table detection in the AQ-BERT fixture, table/prose chunk isolation,
+header repetition across oversized table chunks, and token limits. All 60 server
+unit tests passed. The five real ingestion/persistence integration tests and
+server TypeScript also passed.

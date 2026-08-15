@@ -88,11 +88,102 @@ function packUnitsIntoPieces(units: string[]): string[] {
   return pieces
 }
 
+function chunksFromPieces(
+  block: Block,
+  pieces: string[],
+  startingChunkIndex: number
+): Chunk[] {
+  let charOffset = block.charStart
+
+  return pieces.map((piece, index) => {
+    const charStart = charOffset
+    const charEnd = charStart + piece.length
+    charOffset = charEnd + 1
+
+    return {
+      content: piece,
+      page: block.page,
+      charStart,
+      charEnd,
+      chunkIndex: startingChunkIndex + index,
+    }
+  })
+}
+
+function splitOversizedTable(
+  block: Block,
+  startingChunkIndex: number
+): Chunk[] {
+  const rows = block.text.split('\n').filter((row) => row.trim().length > 0)
+  const header = rows[0]
+  if (!header || rows.length === 1 || countTokens(header) >= MAX_CHUNK_TOKENS) {
+    return chunksFromPieces(
+      block,
+      packUnitsIntoPieces(splitIntoWords(block.text)),
+      startingChunkIndex
+    )
+  }
+
+  const pieces: string[] = []
+  let rowBuffer = [header]
+
+  const flushRows = () => {
+    if (rowBuffer.length <= 1) return
+    pieces.push(rowBuffer.join('\n'))
+    rowBuffer = [header]
+  }
+
+  for (const row of rows.slice(1)) {
+    const candidate = [...rowBuffer, row].join('\n')
+    if (countTokens(candidate) <= MAX_CHUNK_TOKENS) {
+      rowBuffer.push(row)
+      continue
+    }
+
+    flushRows()
+    if (countTokens(`${header}\n${row}`) <= MAX_CHUNK_TOKENS) {
+      rowBuffer.push(row)
+      continue
+    }
+
+    // A single unusually long row still needs splitting. Every piece repeats
+    // the header so its values retain their column meaning.
+    let wordBuffer: string[] = []
+    for (const word of splitIntoWords(row)) {
+      const rowPiece = [...wordBuffer, word].join(' ')
+      if (countTokens(`${header}\n${rowPiece}`) > MAX_CHUNK_TOKENS) {
+        if (wordBuffer.length > 0) {
+          pieces.push(`${header}\n${wordBuffer.join(' ')}`)
+          wordBuffer = []
+        }
+
+        // A single token can theoretically exceed the remaining header-aware
+        // budget. Keep that token alone rather than producing an invalid chunk.
+        if (countTokens(`${header}\n${word}`) > MAX_CHUNK_TOKENS) {
+          pieces.push(word)
+          continue
+        }
+      }
+      wordBuffer.push(word)
+    }
+    if (wordBuffer.length > 0) {
+      pieces.push(`${header}\n${wordBuffer.join(' ')}`)
+    }
+  }
+
+  flushRows()
+  return chunksFromPieces(block, pieces, startingChunkIndex)
+}
+
 // A single block whose own text already exceeds the token budget can't
 // become one chunk without splitting the text itself. Break it into
 // sentences first (a natural boundary), and only fall back to splitting
 // by word if a single sentence is still oversized on its own.
 function splitOversizedBlock(block: Block, startingChunkIndex: number): Chunk[] {
+  if (block.type === 'table') {
+    return splitOversizedTable(block, startingChunkIndex)
+  }
+
   let pieces = packUnitsIntoPieces(splitIntoSentences(block.text))
 
   // Rare case: one sentence, by itself, is still over budget. Re-split
@@ -162,6 +253,28 @@ export function groupIntoChunks(blocks: Block[]): Chunk[] {
 
     for (const block of blocks) {
         const tokenCount = countTokens(block.text)
+
+        // Tables remain separate from surrounding prose. Large tables split by
+        // complete rows and repeat their header so every piece stays readable.
+        if (block.type === 'table') {
+            flushBuffer()
+
+            if (tokenCount > MAX_CHUNK_TOKENS) {
+                const tableChunks = splitOversizedTable(block, chunkIndex)
+                chunks.push(...tableChunks)
+                chunkIndex += tableChunks.length
+            } else {
+                chunks.push({
+                    content: block.text,
+                    page: block.page,
+                    charStart: block.charStart,
+                    charEnd: block.charEnd,
+                    chunkIndex,
+                })
+                chunkIndex++
+            }
+            continue
+        }
 
         // This one block's own text already exceeds the budget — close
         // off whatever's buffered so far (it shouldn't get merged with

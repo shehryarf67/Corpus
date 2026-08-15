@@ -53,6 +53,37 @@ test('a page change forces a new chunk even when the token budget would allow co
   assert.equal(chunks[1]?.page, 2)
 })
 
+test('a table stays separate from surrounding prose', () => {
+  const chunks = groupIntoChunks([
+    makeBlock({ text: 'Paragraph before.', type: 'paragraph' }),
+    makeBlock({
+      text: 'Model | Size | Accuracy\nBERT | 324 | 93.5',
+      type: 'table',
+    }),
+    makeBlock({ text: 'Paragraph after.', type: 'paragraph' }),
+  ])
+
+  assert.equal(chunks.length, 3)
+  assert.equal(chunks[1]?.content, 'Model | Size | Accuracy\nBERT | 324 | 93.5')
+})
+
+test('oversized tables split by rows and repeat the header', () => {
+  const header = 'Model | Size | Accuracy'
+  const rows = Array.from(
+    { length: 300 },
+    (_, index) => `Model-${index} | ${index + 10} | ${(90 + index / 100).toFixed(2)}`
+  )
+  const chunks = groupIntoChunks([
+    makeBlock({ text: [header, ...rows].join('\n'), type: 'table' }),
+  ])
+
+  assert.ok(chunks.length > 1)
+  for (const chunk of chunks) {
+    assert.ok(chunk.content.startsWith(`${header}\n`))
+    assert.ok(countTokens(chunk.content) <= MAX_CHUNK_TOKENS)
+  }
+})
+
 test('no chunk exceeds the token budget, even when a block does', () => {
   const oversizedBlock = makeBlock({ text: repeatSentences(200), page: 1 })
   assert.ok(countTokens(oversizedBlock.text) > MAX_CHUNK_TOKENS, 'fixture block should actually be oversized')

@@ -1,18 +1,30 @@
 import { extractTextRuns, type TextRun } from './extract.js'
 
-type Line = {
+export type LineCell = {
+    text: string
+    minX: number
+    maxX: number
+}
+
+export type Line = {
     text: string
     page: number
     y: number
     fontSize: number
     minX: number
     maxX: number
+    cells: LineCell[]
 }
 
-type Paragraph = { text: string; page: number; fontSize: number }
+export type LayoutSection = {
+  type: 'text' | 'table'
+  text: string
+  page: number
+  fontSize: number
+}
 
 export type Block = {
-  type: 'heading' | 'paragraph'
+  type: 'heading' | 'paragraph' | 'table'
   text: string
   page: number
   charStart: number
@@ -20,6 +32,20 @@ export type Block = {
 }
 
 const LINE_Y_TOLERANCE = 2
+
+// Runs separated by this much empty horizontal space become separate cells.
+// Actual PDF.js run widths make this different from ordinary spaces between
+// words, which remain within the same cell.
+const CELL_GAP_FONT_FACTOR = 1.5
+const MIN_CELL_GAP = 10
+
+// Two aligned rows are enough to recognize a small table, but each needs at
+// least three cells. Requiring three avoids mistaking ordinary two-column page
+// prose for a table merely because both columns share similar y positions.
+const MIN_TABLE_CELLS = 3
+const MIN_TABLE_ROWS = 2
+const TABLE_COLUMN_ALIGNMENT_TOLERANCE = 18
+const TABLE_ROW_GAP_FACTOR = 2.4
 
 // Normal line spacing within a paragraph is roughly 1.2x the font size.
 // A gap past ~1.6x is treated as a paragraph break rather than just the
@@ -62,7 +88,7 @@ function median(values: number[]): number {
     : (sorted[mid] ?? 0)
 }
 
-function groupIntoLines(runs: TextRun[]): Line[] {
+export function groupIntoLines(runs: TextRun[]): Line[] {
   // Rotated fragments (e.g. a sideways preprint watermark) don't have a
   // meaningful "visual row" y-position the way upright text does — their
   // anchor point can coincidentally land close to an unrelated line's y
@@ -80,7 +106,7 @@ function groupIntoLines(runs: TextRun[]): Line[] {
   // The line currently being built, or null if we haven't started one yet.
   // We can't push a finished Line into `lines` until we know no more
   // fragments are going to join it.
-  let current: { texts: string[]; page: number; y: number; fontSize: number; minX: number; maxX: number } | null =
+  let current: { texts: string[]; cells: LineCell[]; page: number; y: number; fontSize: number; minX: number; maxX: number } | null =
     null
 
   for (const run of sorted) {
@@ -93,6 +119,22 @@ function groupIntoLines(runs: TextRun[]): Line[] {
     // the compiler cannot proceed, flagging it as unsafe
     if (belongsToCurrentLine && current) {
       current.texts.push(run.text)
+      const runWidth = run.width > 0
+        ? run.width
+        : run.text.length * run.fontSize * 0.5
+      const runMaxX = run.x + runWidth
+      const previousCell = current.cells[current.cells.length - 1]
+      const cellGapThreshold = Math.max(
+        run.fontSize * CELL_GAP_FONT_FACTOR,
+        MIN_CELL_GAP
+      )
+
+      if (previousCell && run.x - previousCell.maxX <= cellGapThreshold) {
+        previousCell.text += ` ${run.text}`
+        previousCell.maxX = Math.max(previousCell.maxX, runMaxX)
+      } else {
+        current.cells.push({ text: run.text, minX: run.x, maxX: runMaxX })
+      }
       // Take the largest fragment size on the line — covers cases like an
       // inline superscript rendering slightly smaller than the rest.
       current.fontSize = Math.max(current.fontSize, run.fontSize)
@@ -100,7 +142,7 @@ function groupIntoLines(runs: TextRun[]): Line[] {
       // full-width line (title, author block) apart from a line confined
       // to a single column.
       current.minX = Math.min(current.minX, run.x)
-      current.maxX = Math.max(current.maxX, run.x)
+      current.maxX = Math.max(current.maxX, runMaxX)
     } else {
       // Doesn't belong with the current line — close it off (if there was
       // one) and start a new one seeded with this fragment.
@@ -112,9 +154,22 @@ function groupIntoLines(runs: TextRun[]): Line[] {
           fontSize: current.fontSize,
           minX: current.minX,
           maxX: current.maxX,
+          cells: current.cells,
         })
       }
-      current = { texts: [run.text], page: run.page, y: run.y, fontSize: run.fontSize, minX: run.x, maxX: run.x }
+      const runWidth = run.width > 0
+        ? run.width
+        : run.text.length * run.fontSize * 0.5
+      const runMaxX = run.x + runWidth
+      current = {
+        texts: [run.text],
+        cells: [{ text: run.text, minX: run.x, maxX: runMaxX }],
+        page: run.page,
+        y: run.y,
+        fontSize: run.fontSize,
+        minX: run.x,
+        maxX: runMaxX,
+      }
     }
   }
 
@@ -129,6 +184,7 @@ function groupIntoLines(runs: TextRun[]): Line[] {
       fontSize: current.fontSize,
       minX: current.minX,
       maxX: current.maxX,
+      cells: current.cells,
     })
   }
 
@@ -255,56 +311,160 @@ function reorderForColumns(lines: Line[]): Line[] {
 }
 
 
-function groupIntoParagraphs(lines: Line[]): Paragraph[] {
-  const paragraphs: Paragraph[] = []
+function isTableRowCandidate(line: Line): boolean {
+  if (line.cells.length < MIN_TABLE_CELLS) return false
 
-  // The paragraph currently being built, or null if we haven't started one yet.
-  let current: { texts: string[]; page: number; fontSize: number } | null = null
+  const numericCells = line.cells.filter((cell) => /\d/.test(cell.text)).length
+  const averageCellLength =
+    line.cells.reduce((total, cell) => total + cell.text.length, 0) /
+    line.cells.length
 
-  // The last individual Line we looked at. Paragraph doesn't keep a `y`
-  // field (it's not meaningful once multiple lines are folded together),
-  // but the gap check below needs the previous *line's* y specifically —
-  // so it's tracked separately from `current`.
-  let previousLine: Line | null = null
+  return numericCells > 0 || averageCellLength <= 35
+}
 
-  for (const line of lines) {
-    const startsNewParagraph =
-      current === null ||
-      previousLine === null ||
-      previousLine.page !== line.page ||
-      Math.abs(previousLine.fontSize - line.fontSize) > FONT_SIZE_CHANGE_TOLERANCE ||
-      Math.abs(previousLine.y - line.y) > line.fontSize * PARAGRAPH_GAP_FACTOR
+function rowsHaveAlignedColumns(left: Line, right: Line): boolean {
+  if (left.page !== right.page) return false
+  if (
+    Math.abs(left.y - right.y) >
+    Math.max(left.fontSize, right.fontSize) * TABLE_ROW_GAP_FACTOR
+  ) {
+    return false
+  }
 
-    if (startsNewParagraph) {
-      // Close off the paragraph being built, if there was one, before
-      // starting a new one seeded with this line.
-      if (current) {
-        paragraphs.push({ text: current.texts.join(' '), page: current.page, fontSize: current.fontSize })
-      }
-      current = { texts: [line.text], page: line.page, fontSize: line.fontSize }
-    } else if (current) {
-      current.texts.push(line.text)
+  let alignedColumns = 0
+  for (const leftCell of left.cells) {
+    if (
+      right.cells.some(
+        (rightCell) =>
+          Math.abs(leftCell.minX - rightCell.minX) <=
+          TABLE_COLUMN_ALIGNMENT_TOLERANCE
+      )
+    ) {
+      alignedColumns += 1
+    }
+  }
+
+  return alignedColumns >= MIN_TABLE_CELLS
+}
+
+function findTableLineIndexes(lines: Line[]): Set<number> {
+  const tableIndexes = new Set<number>()
+  let start = 0
+
+  while (start < lines.length) {
+    const first = lines[start]
+    if (!first || !isTableRowCandidate(first)) {
+      start += 1
+      continue
     }
 
-    // Updated every iteration, regardless of which branch ran above, so the
-    // next line always has the immediately-preceding line to compare against.
-    previousLine = line
+    let end = start
+    while (end + 1 < lines.length) {
+      const current = lines[end]
+      const next = lines[end + 1]
+      if (
+        !current ||
+        !next ||
+        !isTableRowCandidate(next) ||
+        !rowsHaveAlignedColumns(current, next)
+      ) {
+        break
+      }
+      end += 1
+    }
+
+    if (end - start + 1 >= MIN_TABLE_ROWS) {
+      for (let index = start; index <= end; index++) tableIndexes.add(index)
+    }
+    start = end + 1
   }
 
-  // Same as groupIntoLines: the loop only closes a paragraph when it hits
-  // a new one, so the last paragraph in the document needs a manual flush.
-  if (current) {
-    paragraphs.push({ text: current.texts.join(' '), page: current.page, fontSize: current.fontSize })
+  return tableIndexes
+}
+
+export function groupIntoSections(lines: Line[]): LayoutSection[] {
+  const sections: LayoutSection[] = []
+  const tableLineIndexes = findTableLineIndexes(lines)
+  let paragraph: { texts: string[]; page: number; fontSize: number } | null = null
+  let previousParagraphLine: Line | null = null
+  let table: { rows: string[]; page: number; fontSize: number } | null = null
+
+  const flushParagraph = () => {
+    if (!paragraph) return
+    sections.push({
+      type: 'text',
+      text: paragraph.texts.join(' '),
+      page: paragraph.page,
+      fontSize: paragraph.fontSize,
+    })
+    paragraph = null
+    previousParagraphLine = null
   }
 
-  return paragraphs
+  const flushTable = () => {
+    if (!table) return
+    sections.push({
+      type: 'table',
+      // Preserve both row and cell boundaries in plain text so embeddings and
+      // generation see a readable table instead of one flattened paragraph.
+      text: table.rows.join('\n'),
+      page: table.page,
+      fontSize: table.fontSize,
+    })
+    table = null
+  }
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]
+    if (!line) continue
+
+    if (tableLineIndexes.has(index)) {
+      flushParagraph()
+      const row = line.cells.map((cell) => cell.text).join(' | ')
+
+      if (!table || table.page !== line.page) {
+        flushTable()
+        table = { rows: [row], page: line.page, fontSize: line.fontSize }
+      } else {
+        table.rows.push(row)
+        table.fontSize = Math.max(table.fontSize, line.fontSize)
+      }
+      continue
+    }
+
+    flushTable()
+    const startsNewParagraph =
+      paragraph === null ||
+      previousParagraphLine === null ||
+      previousParagraphLine.page !== line.page ||
+      Math.abs(previousParagraphLine.fontSize - line.fontSize) >
+        FONT_SIZE_CHANGE_TOLERANCE ||
+      Math.abs(previousParagraphLine.y - line.y) >
+        line.fontSize * PARAGRAPH_GAP_FACTOR
+
+    if (startsNewParagraph) {
+      flushParagraph()
+      paragraph = {
+        texts: [line.text],
+        page: line.page,
+        fontSize: line.fontSize,
+      }
+    } else if (paragraph) {
+      paragraph.texts.push(line.text)
+    }
+    previousParagraphLine = line
+  }
+
+  flushParagraph()
+  flushTable()
+  return sections
 }
 
 export async function layoutText(fileBuffer: Buffer): Promise<Block[]> {
   const runs = await extractTextRuns(fileBuffer)
   const lines = groupIntoLines(runs)
   const orderedLines = reorderForColumns(lines)
-  const paragraphs = groupIntoParagraphs(orderedLines)
+  const sections = groupIntoSections(orderedLines)
 
   // Whole-document view, needed before classifying any individual
   // paragraph — this is why it can't live inside groupIntoParagraphs,
@@ -320,19 +480,24 @@ export async function layoutText(fileBuffer: Buffer): Promise<Block[]> {
   let charOffset = 0
   let currentPage = -1
 
-  for (const paragraph of paragraphs) {
-    if (paragraph.page !== currentPage) {
-      currentPage = paragraph.page
+  for (const section of sections) {
+    if (section.page !== currentPage) {
+      currentPage = section.page
       charOffset = 0
     }
 
     const charStart = charOffset
-    const charEnd = charStart + paragraph.text.length
+    const charEnd = charStart + section.text.length
 
     blocks.push({
-      type: paragraph.fontSize > headingThreshold ? 'heading' : 'paragraph',
-      text: paragraph.text,
-      page: paragraph.page,
+      type:
+        section.type === 'table'
+          ? 'table'
+          : section.fontSize > headingThreshold
+            ? 'heading'
+            : 'paragraph',
+      text: section.text,
+      page: section.page,
       charStart,
       charEnd,
     })

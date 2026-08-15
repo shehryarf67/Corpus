@@ -12,6 +12,7 @@ type PdfTextItem = {
   str: string
   transform: number[]
   fontName: string
+  width: number
 }
 
 // In a browser, pdfjs runs parsing inside a Web Worker so the UI thread
@@ -33,6 +34,7 @@ export type TextRun = {
   page: number
   x: number
   y: number
+  width: number
   fontSize: number
   fontName: string
   // True for text drawn at a significant angle (e.g. a sideways preprint
@@ -93,6 +95,9 @@ export async function extractTextRuns(fileBuffer: Buffer): Promise<TextRun[]> {
         page: pageNumber,
         x: x ?? 0,
         y: y ?? 0,
+        // PDF.js reports the rendered horizontal extent. Layout uses this to
+        // distinguish a normal word gap from the empty space between cells.
+        width: textItem.width ?? 0,
         fontSize,
         fontName: textItem.fontName,
         isRotated,
