@@ -1731,3 +1731,27 @@ pending ingestion job whose stored PDF no longer existed. It correctly marked
 that job failed with ENOENT. This was unrelated to the temporary browser fixture,
 but it confirms that a database job can outlive its storage file and should be
 shown as a recoverable ingestion failure in the library.
+
+19. Citation highlight render-loop fix
+--------------------------------------
+
+PdfDocument previously stored textLayerRevision in React state. When the cited
+page's text layer completed, onRenderTextLayerSuccess incremented that state.
+The state update rendered Page again, which completed the text layer again and
+could repeat the same state update. This feedback loop kept recreating spans and
+could remove or prevent the citation highlight.
+
+The matching and DOM-highlighting work now lives in applyCitationHighlight(), a
+plain helper that does not update React state. A citation selection first tries
+the helper immediately because the text layer may already exist. The Page
+onRenderTextLayerSuccess callback also calls it, covering initial PDF loading and
+zoom changes where PDF.js creates fresh spans later.
+
+The helper still behaves fail-soft: it only handles the selected page, removes
+the old highlight, normalizes and matches the real text spans, adds the highlight
+class, and centers the first matched span. A requestAnimationFrame ref cancels an
+older pending scroll before scheduling a new one. None of these actions renders
+the React component again, so text-layer completion cannot start a render loop.
+
+After the refactor, web TypeScript, ESLint, and all 13 SSE/citation unit tests
+passed.

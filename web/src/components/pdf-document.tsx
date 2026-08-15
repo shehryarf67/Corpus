@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import {
   matchCitationPassage,
@@ -31,6 +31,96 @@ type PdfDocumentProps = {
   highlightRequestId?: number;
 };
 
+function clearCitationHighlight(pageElements: Iterable<HTMLDivElement>) {
+  for (const pageElement of pageElements) {
+    for (const span of pageElement.querySelectorAll(
+      ".corpus-citation-highlight",
+    )) {
+      span.classList.remove("corpus-citation-highlight");
+    }
+  }
+}
+
+type ApplyHighlightOptions = {
+  renderedPage: number;
+  targetPage?: number | null;
+  chunkId?: string;
+  content?: string;
+  pageRefs: RefObject<Map<number, HTMLDivElement>>;
+  scrollFrameRef: RefObject<number | null>;
+};
+
+function applyCitationHighlight({
+  renderedPage,
+  targetPage,
+  chunkId,
+  content,
+  pageRefs,
+  scrollFrameRef,
+}: ApplyHighlightOptions) {
+  // All pages report text-layer completion. Only the cited page needs work.
+  if (renderedPage !== targetPage || !chunkId || !content) return;
+
+  clearCitationHighlight(pageRefs.current.values());
+
+  const pageElement = pageRefs.current.get(renderedPage);
+  if (!pageElement) return;
+
+  const spans = Array.from(
+    pageElement.querySelectorAll<HTMLSpanElement>(
+      ".react-pdf__Page__textContent span",
+    ),
+  );
+  if (spans.length === 0) return;
+
+  let previousTop: number | null = null;
+  const fragments: CitationTextFragment[] = spans.map((span, sourceIndex) => {
+    const top = span.getBoundingClientRect().top;
+    const fragment = {
+      text: span.textContent ?? "",
+      sourceIndex,
+      // A visible top-position change tells us PDF.js moved to another line.
+      lineBreakBefore:
+        previousTop !== null && Math.abs(top - previousTop) > 2,
+    };
+    previousTop = top;
+    return fragment;
+  });
+
+  const normalizedPage = normalizePageFragments(fragments);
+  const match = matchCitationPassage(content, normalizedPage.text);
+
+  // Ambiguous or weak matches deliberately produce no highlight. Page
+  // navigation already succeeded independently, so this remains fail-soft.
+  if (!match) return;
+
+  const matchedSpanIndexes = new Set(
+    normalizedPage.sourceIndexes.slice(match.start, match.end),
+  );
+
+  for (const sourceIndex of matchedSpanIndexes) {
+    spans[sourceIndex]?.classList.add("corpus-citation-highlight");
+  }
+
+  const firstMatchedIndex = matchedSpanIndexes.values().next().value;
+  const firstMatchedSpan =
+    firstMatchedIndex === undefined ? undefined : spans[firstMatchedIndex];
+  if (!firstMatchedSpan) return;
+
+  if (scrollFrameRef.current !== null) {
+    cancelAnimationFrame(scrollFrameRef.current);
+  }
+
+  scrollFrameRef.current = requestAnimationFrame(() => {
+    firstMatchedSpan.scrollIntoView({
+      behavior: accessibleScrollBehavior(),
+      block: "center",
+      inline: "nearest",
+    });
+    scrollFrameRef.current = null;
+  });
+}
+
 export default function PdfDocument({
   fileUrl,
   zoom,
@@ -45,106 +135,41 @@ export default function PdfDocument({
   // PdfDocument needs this count to know how many Page components to create.
   // PdfViewer separately stores the same value for its toolbar and controls.
   const [numberOfPages, setNumberOfPages] = useState(0);
-  const [textLayerRevision, setTextLayerRevision] = useState(0);
+  const scrollFrameRef = useRef<number | null>(null);
 
   function handleDocumentLoad({ numPages }: { numPages: number }) {
     setNumberOfPages(numPages);
     onLoadSuccess(numPages);
   }
 
-  function handleTextLayerRendered(pageNumber: number) {
-    // Zooming recreates text-layer spans. Re-run matching when the currently
-    // cited page finishes rendering so its highlight is restored.
-    if (pageNumber === highlightPage) {
-      setTextLayerRevision((current) => current + 1);
-    }
-  }
-
   useEffect(() => {
-    // Always remove the previous visual match first. Page navigation lives in
-    // PdfViewer and has already happened independently of this best-effort step.
-    for (const pageElement of pageRefs.current.values()) {
-      for (const span of pageElement.querySelectorAll(
-        ".corpus-citation-highlight",
-      )) {
-        span.classList.remove("corpus-citation-highlight");
-      }
-    }
-
-    if (
-      highlightPage == null ||
-      !highlightChunkId ||
-      !highlightContent
-    ) {
-      return;
-    }
-
-    const pageElement = pageRefs.current.get(highlightPage);
-    if (!pageElement) return;
-
-    const spans = Array.from(
-      pageElement.querySelectorAll<HTMLSpanElement>(
-        ".react-pdf__Page__textContent span",
-      ),
-    );
-    if (spans.length === 0) return;
-
-    let previousTop: number | null = null;
-    const fragments: CitationTextFragment[] = spans.map((span, sourceIndex) => {
-      const top = span.getBoundingClientRect().top;
-      const fragment = {
-        text: span.textContent ?? "",
-        sourceIndex,
-        // A visible top-position change tells us PDF.js moved to another line.
-        lineBreakBefore:
-          previousTop !== null && Math.abs(top - previousTop) > 2,
-      };
-      previousTop = top;
-      return fragment;
-    });
-
-    const normalizedPage = normalizePageFragments(fragments);
-    const match = matchCitationPassage(
-      highlightContent,
-      normalizedPage.text,
-    );
-
-    // Ambiguous or weak matches deliberately produce no highlight. The page
-    // jump still succeeded because it does not depend on this effect.
-    if (!match) return;
-
-    const matchedSpanIndexes = new Set(
-      normalizedPage.sourceIndexes.slice(match.start, match.end),
-    );
-
-    for (const sourceIndex of matchedSpanIndexes) {
-      spans[sourceIndex]?.classList.add("corpus-citation-highlight");
-    }
-
-    // Page navigation already provided a reliable fallback. Once matching
-    // succeeds, refine that jump by centering the first highlighted span.
-    const firstMatchedIndex = matchedSpanIndexes.values().next().value;
-    const firstMatchedSpan =
-      firstMatchedIndex === undefined ? undefined : spans[firstMatchedIndex];
-
-    if (!firstMatchedSpan) return;
-
-    const frameId = requestAnimationFrame(() => {
-      firstMatchedSpan.scrollIntoView({
-        behavior: accessibleScrollBehavior(),
-        block: "center",
-        inline: "nearest",
+    // A citation click can happen after the text layer already exists, so try
+    // immediately. If the layer is still rendering, the Page callback below
+    // safely tries again when its spans are ready.
+    clearCitationHighlight(pageRefs.current.values());
+    if (highlightPage != null) {
+      applyCitationHighlight({
+        renderedPage: highlightPage,
+        targetPage: highlightPage,
+        chunkId: highlightChunkId,
+        content: highlightContent,
+        pageRefs,
+        scrollFrameRef,
       });
-    });
+    }
 
-    return () => cancelAnimationFrame(frameId);
+    return () => {
+      if (scrollFrameRef.current !== null) {
+        cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
+    };
   }, [
     highlightChunkId,
     highlightContent,
     highlightPage,
     highlightRequestId,
     pageRefs,
-    textLayerRevision,
   ]);
 
   return (
@@ -181,8 +206,18 @@ export default function PdfDocument({
               // citation highlighting real text spans to target.
               renderTextLayer
               renderAnnotationLayer
+              // Apply directly after PDF.js creates the spans. This does not
+              // update React state, so rendering the layer cannot trigger an
+              // endless render -> state update -> render cycle.
               onRenderTextLayerSuccess={() =>
-                handleTextLayerRendered(pageNumber)
+                applyCitationHighlight({
+                  renderedPage: pageNumber,
+                  targetPage: highlightPage,
+                  chunkId: highlightChunkId,
+                  content: highlightContent,
+                  pageRefs,
+                  scrollFrameRef,
+                })
               }
             />
           </div>
