@@ -12,6 +12,13 @@ import { selectCitationPassages } from '../lib/citation-passages.js'
 import { fuseWithRRF } from '../lib/rrf.js'
 import { rerankChunks } from '../lib/reranker.js'
 import { rewriteQuestion } from '../lib/rewrite.js'
+import {
+  logQueryTiming,
+  startQueryTiming,
+  timeQueryStage,
+  timeSynchronousQueryStage,
+  type QueryTiming,
+} from '../lib/query-timing.js'
 
 const RETRIEVAL_CANDIDATE_LIMIT = 20
 const RERANK_CANDIDATE_LIMIT = 15
@@ -35,6 +42,7 @@ export type PreparedQuery = {
   conversationId: string
   messages: ChatMessage[]
   sources: ContextSource[]
+  timing?: QueryTiming
 }
 
 // The service uses this error when the request is valid JSON but the selected
@@ -58,16 +66,22 @@ export async function prepareQuery(
   userId: string,
   conversationId?: string
 ): Promise<PreparedQuery> {
+  const timing = startQueryTiming()
+
   // This scoped lookup is the ownership gate for both normal and streaming
   // queries. A foreign document looks exactly like a missing document.
-  const document = await Documents.getByIdForUser(documentId, userId)
+  const document = await timeQueryStage(timing, 'document_ownership', () =>
+    Documents.getByIdForUser(documentId, userId)
+  )
   if (!document) {
     throw new QueryConversationError('Document not found', 404)
   }
 
-  const conversation = conversationId
-    ? await Conversations.getByIdForUser(conversationId, userId)
-    : await Conversations.create(documentId)
+  const conversation = await timeQueryStage(timing, 'conversation_setup', () =>
+    conversationId
+      ? Conversations.getByIdForUser(conversationId, userId)
+      : Conversations.create(documentId)
+  )
 
   if (!conversation) {
     throw new QueryConversationError('Conversation not found', 404)
@@ -84,19 +98,29 @@ export async function prepareQuery(
 
   // Loading history before saving the new question means the question does not
   // appear twice when both `history` and `question` are sent to the models.
-  const history = await Messages.getRecentByConversationId(conversation.id)
+  const history = await timeQueryStage(timing, 'history_load', () =>
+    Messages.getRecentByConversationId(conversation.id)
+  )
 
-  await Messages.create(conversation.id, 'user', question) // Save the new question to the conversation history.
-  const rewrittenQuestion = await rewriteQuestion(question, history)
+  await timeQueryStage(timing, 'user_message_save', () =>
+    Messages.create(conversation.id, 'user', question)
+  )
+  const rewrittenQuestion = await timeQueryStage(timing, 'question_rewrite', () =>
+    rewriteQuestion(question, history)
+  )
 
   // Keyword retrieval does not need the embedding, so it can run while the
   // local embedding model converts the rewritten search question into a vector.
   const [embeddings, keywordResults] = await Promise.all([
-    embed([rewrittenQuestion], 'query'),
-    Chunks.searchByKeyword(
-      documentId,
-      rewrittenQuestion,
-      RETRIEVAL_CANDIDATE_LIMIT
+    timeQueryStage(timing, 'query_embedding', () =>
+      embed([rewrittenQuestion], 'query')
+    ),
+    timeQueryStage(timing, 'keyword_retrieval', () =>
+      Chunks.searchByKeyword(
+        documentId,
+        rewrittenQuestion,
+        RETRIEVAL_CANDIDATE_LIMIT
+      )
     ),
   ])
   const queryEmbedding = embeddings[0]
@@ -105,33 +129,45 @@ export async function prepareQuery(
     throw new Error('Failed to create query embedding')
   }
 
-  const vectorResults = await Chunks.searchSimilar(
-    documentId,
-    queryEmbedding,
-    RETRIEVAL_CANDIDATE_LIMIT
+  const vectorResults = await timeQueryStage(timing, 'vector_retrieval', () =>
+    Chunks.searchSimilar(
+      documentId,
+      queryEmbedding,
+      RETRIEVAL_CANDIDATE_LIMIT
+    )
   )
 
   // RRF gives us a broad candidate list using both retrieval signals. The
   // cross-encoder then reads the question together with each of the best 15
   // candidates and sorts them by direct relevance. Only its top five become
   // generation context, keeping the final prompt focused.
-  const fusedResults = fuseWithRRF(vectorResults, keywordResults)
+  const fusedResults = timeSynchronousQueryStage(timing, 'rrf_fusion', () =>
+    fuseWithRRF(vectorResults, keywordResults)
+  )
   const rerankCandidates = fusedResults.slice(0, RERANK_CANDIDATE_LIMIT)
-  const rerankedResults = await rerankChunks(
-    rewrittenQuestion,
-    rerankCandidates
+  const rerankedResults = await timeQueryStage(
+    timing,
+    'cross_encoder_rerank',
+    () => rerankChunks(rewrittenQuestion, rerankCandidates)
   )
   const contextChunks = rerankedResults.slice(0, CONTEXT_SOURCE_LIMIT)
-  const { sources, context } = buildContext(contextChunks)
+  const { sources, context } = timeSynchronousQueryStage(
+    timing,
+    'context_build',
+    () => buildContext(contextChunks)
+  )
 
   // Retrieval used the standalone rewrite, but the answer prompt uses exactly
   // what the user asked plus prior history and the retrieved document context.
-  const messages = buildAnswerMessages(question, context, history)
+  const messages = timeSynchronousQueryStage(timing, 'prompt_build', () =>
+    buildAnswerMessages(question, context, history)
+  )
 
   return {
     conversationId: conversation.id,
     messages,
     sources,
+    timing,
   }
 }
 
@@ -149,12 +185,20 @@ export async function queryConversation(
     userId,
     conversationId
   )
+  const { timing } = prepared
 
   if (prepared.sources.length === 0) {
-    await Messages.create(
-      prepared.conversationId,
-      'assistant',
-      NO_SEARCHABLE_CONTENT_ANSWER
+    await timeQueryStage(timing, 'assistant_message_save', () =>
+      Messages.create(
+        prepared.conversationId,
+        'assistant',
+        NO_SEARCHABLE_CONTENT_ANSWER
+      )
+    )
+    logQueryTiming(
+      timing,
+      'query_complete',
+      timing?.startedAt ?? performance.now()
     )
 
     return {
@@ -164,8 +208,14 @@ export async function queryConversation(
     }
   }
 
-  const rawAnswer = await chat(prepared.messages)
-  let validated = validateCitations(rawAnswer, prepared.sources)
+  const rawAnswer = await timeQueryStage(timing, 'answer_generation', () =>
+    chat(prepared.messages)
+  )
+  let validated = timeSynchronousQueryStage(
+    timing,
+    'citation_validation',
+    () => validateCitations(rawAnswer, prepared.sources)
+  )
 
   // Citations are model-written text, so the first answer can omit them or
   // invent a label. Retry exactly once with the same grounded prompt and the
@@ -178,8 +228,14 @@ export async function queryConversation(
       rawAnswer,
       prepared.sources.map((source) => source.label)
     )
-    const retryAnswer = await chat(retryMessages, CITATION_CORRECTION_OPTIONS)
-    validated = validateCitations(retryAnswer, prepared.sources)
+    const retryAnswer = await timeQueryStage(timing, 'citation_correction', () =>
+      chat(retryMessages, CITATION_CORRECTION_OPTIONS)
+    )
+    validated = timeSynchronousQueryStage(
+      timing,
+      'citation_revalidation',
+      () => validateCitations(retryAnswer, prepared.sources)
+    )
   }
 
   if (validated.invalidLabels.length > 0) {
@@ -188,17 +244,29 @@ export async function queryConversation(
     )
   }
 
-  const highlightedSources = selectCitationPassages(
-    validated.answer,
-    validated.sources,
-    prepared.sources
+  const highlightedSources = timeSynchronousQueryStage(
+    timing,
+    'passage_selection',
+    () =>
+      selectCitationPassages(
+        validated.answer,
+        validated.sources,
+        prepared.sources
+      )
   )
 
-  await Messages.create(
-    prepared.conversationId,
-    'assistant',
-    validated.answer,
-    highlightedSources
+  await timeQueryStage(timing, 'assistant_message_save', () =>
+    Messages.create(
+      prepared.conversationId,
+      'assistant',
+      validated.answer,
+      highlightedSources
+    )
+  )
+  logQueryTiming(
+    timing,
+    'query_complete',
+    timing?.startedAt ?? performance.now()
   )
 
   return {

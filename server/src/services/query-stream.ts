@@ -8,6 +8,11 @@ import {
   CITATION_CORRECTION_OPTIONS,
 } from '../lib/prompt.js'
 import {
+  logQueryTiming,
+  timeQueryStage,
+  timeSynchronousQueryStage,
+} from '../lib/query-timing.js'
+import {
   NO_SEARCHABLE_CONTENT_ANSWER,
   type PreparedQuery,
 } from './query.js'
@@ -56,6 +61,8 @@ function materiallyDiffers(original: string, corrected: string): boolean {
 export async function* streamPreparedQuery(
   prepared: PreparedQuery
 ): AsyncGenerator<QueryStreamEvent> {
+  const { timing } = prepared
+
   // Send the conversation ID first so a client can store a newly-created ID
   // before the answer has finished generating.
   yield {
@@ -81,10 +88,17 @@ export async function* streamPreparedQuery(
       status: 'finalizing',
     }
 
-    await Messages.create(
-      prepared.conversationId,
-      'assistant',
-      NO_SEARCHABLE_CONTENT_ANSWER
+    await timeQueryStage(timing, 'assistant_message_save', () =>
+      Messages.create(
+        prepared.conversationId,
+        'assistant',
+        NO_SEARCHABLE_CONTENT_ANSWER
+      )
+    )
+    logQueryTiming(
+      timing,
+      'query_complete',
+      timing?.startedAt ?? performance.now()
     )
 
     yield {
@@ -97,23 +111,34 @@ export async function* streamPreparedQuery(
   }
 
   let rawAnswer = ''
+  const generationStartedAt = performance.now()
+  let receivedFirstToken = false
 
   // Forward each Ollama text piece immediately while also keeping one complete
   // answer for citation validation and a single database message afterward.
   for await (const text of chatStream(prepared.messages)) {
+    if (!receivedFirstToken) {
+      logQueryTiming(timing, 'generation_first_token', generationStartedAt)
+      receivedFirstToken = true
+    }
     rawAnswer += text
     yield {
       type: 'token',
       text,
     }
   }
+  logQueryTiming(timing, 'answer_generation', generationStartedAt)
 
   yield {
     type: 'status',
     status: 'finalizing',
   }
 
-  let validated = validateCitations(rawAnswer, prepared.sources)
+  let validated = timeSynchronousQueryStage(
+    timing,
+    'citation_validation',
+    () => validateCitations(rawAnswer, prepared.sources)
+  )
   let citationAnswer = validated.answer
 
   // Tokens have already reached the browser, so do not stream a second answer.
@@ -128,11 +153,16 @@ export async function* streamPreparedQuery(
         rawAnswer,
         prepared.sources.map((source) => source.label)
       )
-      const correctedAnswer = await chat(
-        correctionMessages,
-        CITATION_CORRECTION_OPTIONS
+      const correctedAnswer = await timeQueryStage(
+        timing,
+        'citation_correction',
+        () => chat(correctionMessages, CITATION_CORRECTION_OPTIONS)
       )
-      const corrected = validateCitations(correctedAnswer, prepared.sources)
+      const corrected = timeSynchronousQueryStage(
+        timing,
+        'citation_revalidation',
+        () => validateCitations(correctedAnswer, prepared.sources)
+      )
 
       if (corrected.sources.length > 0) {
         // Keep the labelled correction internally even when its prose is not
@@ -184,18 +214,30 @@ export async function* streamPreparedQuery(
     )
   }
 
-  const highlightedSources = selectCitationPassages(
-    citationAnswer,
-    validated.sources,
-    prepared.sources
+  const highlightedSources = timeSynchronousQueryStage(
+    timing,
+    'passage_selection',
+    () =>
+      selectCitationPassages(
+        citationAnswer,
+        validated.sources,
+        prepared.sources
+      )
   )
 
   // Do not save one row per token. Save only the complete validated answer.
-  await Messages.create(
-    prepared.conversationId,
-    'assistant',
-    validated.answer,
-    highlightedSources
+  await timeQueryStage(timing, 'assistant_message_save', () =>
+    Messages.create(
+      prepared.conversationId,
+      'assistant',
+      validated.answer,
+      highlightedSources
+    )
+  )
+  logQueryTiming(
+    timing,
+    'query_complete',
+    timing?.startedAt ?? performance.now()
   )
 
   // done means generation, validation, and database persistence all succeeded.

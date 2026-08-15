@@ -1932,3 +1932,49 @@ Tests confirm that both chat and chatStream send the ten-minute keep-alive and
 that citation correction sends a 192-token request while retaining keep-alive.
 All 61 server unit tests, five focused stream route/service tests, both TypeScript
 checks, web ESLint, and all 13 frontend unit tests passed.
+
+24. Query stage timing and first real measurement
+-------------------------------------------------
+
+query-timing.ts now creates one short request ID and records the start time of
+each question. The same timing object travels from prepareQuery() into either
+the normal or streaming answer path. This lets terminal lines from simultaneous
+questions be grouped without logging the user's question or document content.
+
+prepareQuery() measures the ownership lookup, conversation setup, history load,
+user-message save, question rewrite, query embedding, keyword retrieval, vector
+retrieval, RRF fusion, cross-encoder reranking, context construction, and prompt
+construction. queryConversation() and streamPreparedQuery() then measure answer
+generation, citation validation/correction, passage selection, assistant-message
+persistence, and the complete request.
+
+The streaming path has a separate generation_first_token measurement. This is
+important because it distinguishes time spent waiting for the model to begin
+from time spent receiving the generated answer after streaming has started.
+The wrappers log a stage in a finally block, so an operation that throws or times
+out still reports how long it occupied the pipeline.
+
+A real streamed question against the existing ingested test document produced:
+
+```text
+retrieval and prompt preparation: 1294 ms
+query embedding:                   185 ms
+cross-encoder reranking:          1091 ms
+wait for first Ollama token:    109915 ms
+complete answer generation:     114662 ms
+citation correction:             10211 ms
+passage selection:                  38 ms
+assistant message save:             48 ms
+complete query:                  126262 ms
+```
+
+The measurements show that Postgres retrieval is not the present speed problem.
+All retrieval and reranking finished in about 1.3 seconds, but Ollama needed about
+109.9 seconds before returning the first token. After that first token arrived,
+the remaining answer streamed in about 4.7 seconds. Citation correction added a
+further 10.2 seconds because the first answer lacked usable citation labels.
+
+Therefore the next optimization should target Ollama/model startup and model
+residency first, then reduce how often citation correction is required. Changing
+keyword SQL, vector SQL, or RRF would save milliseconds while leaving nearly all
+of the user-visible delay untouched.
