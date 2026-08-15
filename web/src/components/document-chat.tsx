@@ -13,6 +13,7 @@ type ChatMessage = {
   content: string;
   sources: QuerySource[];
   status: "done" | "processing" | "streaming" | "stopped";
+  progress?: string;
 };
 
 type DocumentChatProps = {
@@ -109,6 +110,7 @@ export function DocumentChat({
       // This message exists before Hono sends its first text token, so the UI
       // can immediately show that the submitted question is being processed.
       status: "processing",
+      progress: "Finding relevant passages...",
     };
 
     // Add an empty assistant message now. Each token will fill this same
@@ -133,6 +135,21 @@ export function DocumentChat({
         },
         {
           onConversation: (id) => setConversationId(id),
+          onStatus: (status) => {
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === assistantMessageId
+                  ? {
+                      ...message,
+                      progress:
+                        status === "generating"
+                          ? "Writing the answer..."
+                          : "Checking sources...",
+                    }
+                  : message,
+              ),
+            );
+          },
           onToken: (text) => {
             // Tokens are small answer pieces. Append each one to the current
             // assistant message so the user sees generation in real time.
@@ -143,6 +160,7 @@ export function DocumentChat({
                       ...message,
                       content: message.content + text,
                       status: "streaming",
+                      progress: undefined,
                     }
                   : message,
               ),
@@ -162,6 +180,7 @@ export function DocumentChat({
                       content: result.answer,
                       sources: result.sources,
                       status: "done",
+                      progress: undefined,
                     }
                   : message,
               ),
@@ -238,9 +257,9 @@ export function DocumentChat({
                   : "max-w-full text-[13.8px] leading-[1.72] text-read"
               }
             >
-              {message.status === "processing" ? (
+              {message.status === "processing" && !message.content ? (
                 <span role="status" className="font-mono text-[11px] text-graphite-dim">
-                  Processing...
+                  {message.progress ?? "Preparing the answer..."}
                 </span>
               ) : message.content ? (
                 message.content
@@ -249,6 +268,15 @@ export function DocumentChat({
                   Generation stopped.
                 </span>
               ) : null}
+
+              {message.progress && message.content && (
+                <p
+                  role="status"
+                  className="mt-2 font-mono text-[10px] text-graphite-dim"
+                >
+                  {message.progress}
+                </p>
+              )}
 
               {message.status === "stopped" && message.content && (
                 <p className="mt-2 font-mono text-[10px] text-graphite-dim">

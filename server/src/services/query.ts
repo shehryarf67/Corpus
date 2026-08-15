@@ -5,6 +5,7 @@ import { chat, type ChatMessage } from '../lib/generation.js'
 import {
   buildAnswerMessages,
   buildCitationRetryMessages,
+  CITATION_CORRECTION_OPTIONS,
 } from '../lib/prompt.js'
 import { validateCitations } from '../lib/citations.js'
 import { selectCitationPassages } from '../lib/citation-passages.js'
@@ -177,7 +178,7 @@ export async function queryConversation(
       rawAnswer,
       prepared.sources.map((source) => source.label)
     )
-    const retryAnswer = await chat(retryMessages)
+    const retryAnswer = await chat(retryMessages, CITATION_CORRECTION_OPTIONS)
     validated = validateCitations(retryAnswer, prepared.sources)
   }
 

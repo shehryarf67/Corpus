@@ -42,6 +42,7 @@ test('chat sends the answer token limit to Ollama', async () => {
     (requestBody as { options: { num_predict: number } }).options.num_predict,
     512
   )
+  assert.equal((requestBody as { keep_alive: string }).keep_alive, '10m')
 })
 
 test('chat accepts a smaller operation-specific token limit', async () => {
@@ -67,6 +68,27 @@ test('chatStream yields text from multiple NDJSON lines', async () => {
   ])
 
   assert.deepEqual(await collectStream(), ['AQ', '-BERT'])
+})
+
+test('chatStream keeps the Ollama model warm between questions', async () => {
+  let requestBody: unknown
+  globalThis.fetch = async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body))
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode('{"message":{"content":"Answer"},"done":true}\n')
+          )
+          controller.close()
+        },
+      }),
+      { status: 200 }
+    )
+  }
+
+  assert.deepEqual(await collectStream(), ['Answer'])
+  assert.equal((requestBody as { keep_alive: string }).keep_alive, '10m')
 })
 
 test('chatStream reconstructs a JSON line split across network reads', async () => {

@@ -155,9 +155,17 @@ test('streamPreparedQuery corrects missing citations without replacing unchanged
       similarity: 1,
     }
     let requestNumber = 0
+    const requestBodies: Array<{
+      options?: { num_predict?: number }
+      keep_alive?: string
+    }> = []
 
-    globalThis.fetch = async () => {
+    globalThis.fetch = async (_input, init) => {
       requestNumber += 1
+      requestBodies.push(JSON.parse(String(init?.body)) as {
+        options?: { num_predict?: number }
+        keep_alive?: string
+      })
 
       if (requestNumber === 1) {
         return new Response(
@@ -190,6 +198,9 @@ test('streamPreparedQuery corrects missing citations without replacing unchanged
     })
 
     assert.equal(requestNumber, 2)
+    const correctionRequestBody = requestBodies[1]
+    assert.equal(correctionRequestBody?.options?.num_predict, 192)
+    assert.equal(correctionRequestBody?.keep_alive, '10m')
     const streamedAnswer = events
       .filter((event) => event.type === 'token')
       .map((event) => event.text)

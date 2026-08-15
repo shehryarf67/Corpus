@@ -3,7 +3,10 @@ import { selectCitationPassages } from '../lib/citation-passages.js'
 import type { ContextSource } from '../lib/context.js'
 import { Messages } from '../lib/db.js'
 import { chat, chatStream } from '../lib/generation.js'
-import { buildCitationRetryMessages } from '../lib/prompt.js'
+import {
+  buildCitationRetryMessages,
+  CITATION_CORRECTION_OPTIONS,
+} from '../lib/prompt.js'
 import {
   NO_SEARCHABLE_CONTENT_ANSWER,
   type PreparedQuery,
@@ -125,7 +128,10 @@ export async function* streamPreparedQuery(
         rawAnswer,
         prepared.sources.map((source) => source.label)
       )
-      const correctedAnswer = await chat(correctionMessages)
+      const correctedAnswer = await chat(
+        correctionMessages,
+        CITATION_CORRECTION_OPTIONS
+      )
       const corrected = validateCitations(correctedAnswer, prepared.sources)
 
       if (corrected.sources.length > 0) {

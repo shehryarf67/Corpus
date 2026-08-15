@@ -3,6 +3,7 @@ const MODEL = 'llama3.2'
 
 const ANSWER_MAX_TOKENS = 512
 const ANSWER_TIMEOUT_MS = 120_000
+const OLLAMA_KEEP_ALIVE = '10m'
 
 export type ChatMessage = {
   role: 'system' | 'user' | 'assistant'
@@ -54,6 +55,9 @@ export async function chat(
       model: MODEL,
       messages,
       stream: false,
+      // Keep the model in memory between nearby questions. The first request
+      // still loads it, while later requests avoid paying that cold-start cost.
+      keep_alive: OLLAMA_KEEP_ALIVE,
       // A grounded document answer benefits from consistency more than
       // creativity. Temperature 0 reduces random wording and citation-label
       // changes between otherwise identical requests.
@@ -91,6 +95,7 @@ export async function* chatStream(
       model: MODEL,
       messages,
       stream: true,
+      keep_alive: OLLAMA_KEEP_ALIVE,
       options: { temperature: 0, num_predict: maxTokens },
     }),
     // This is currently one simple total timeout for the full stream. We can

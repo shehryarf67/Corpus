@@ -1892,3 +1892,43 @@ prose, real table detection in the AQ-BERT fixture, table/prose chunk isolation,
 header repetition across oversized table chunks, and token limits. All 60 server
 unit tests passed. The five real ingestion/persistence integration tests and
 server TypeScript also passed.
+
+23. Faster repeat queries and honest progress states
+----------------------------------------------------
+
+generation.ts now sends `keep_alive: "10m"` in both normal and streaming Ollama
+chat requests. The first request still pays the model-loading cost, but Ollama
+keeps llama3.2 resident in memory for ten minutes afterward. Nearby questions,
+follow-up rewrites, and citation correction can reuse the loaded model instead
+of repeatedly loading it from disk into memory.
+
+Citation repair now uses one shared CITATION_CORRECTION_OPTIONS value from
+prompt.ts:
+
+```text
+maxTokens: 192
+timeoutMs: 45000
+```
+
+Normal answers still allow up to 512 output tokens and 120 seconds. Correction
+only needs to preserve prose and repair [S#] labels, so it receives a smaller
+budget and cannot add another full-length generation delay. Both normal and SSE
+query services use the same bounded correction options.
+
+DocumentChat now stores a temporary progress string on the in-flight assistant
+message. Immediately after submission it shows Finding relevant passages while
+the Next request waits for Hono's prepareQuery work. Hono starts SSE only after
+retrieval and reranking complete, so the first generating status changes the UI
+to Writing the answer. Incoming tokens replace that label with live prose. The
+finalizing status shows Checking sources below the completed prose while citation
+validation, optional correction, passage selection, and message persistence run.
+The done event removes the progress label and adds the authoritative sources.
+
+These labels describe real stages without exposing internal names such as RRF or
+cross-encoder reranking. They improve perceived responsiveness but do not claim
+that retrieval itself became faster.
+
+Tests confirm that both chat and chatStream send the ten-minute keep-alive and
+that citation correction sends a 192-token request while retaining keep-alive.
+All 61 server unit tests, five focused stream route/service tests, both TypeScript
+checks, web ESLint, and all 13 frontend unit tests passed.

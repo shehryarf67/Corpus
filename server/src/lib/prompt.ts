@@ -1,6 +1,13 @@
 import type { ChatMessage } from './generation.js'
 import type { MessageRow } from './db.js'
 
+// Citation repair is a short formatting operation, not another full answer.
+// Its smaller budget prevents a missing label from adding another long model run.
+export const CITATION_CORRECTION_OPTIONS = {
+  maxTokens: 192,
+  timeoutMs: 45_000,
+} as const
+
 const ANSWER_SYSTEM_PROMPT = `You are a document question-answering assistant.
 
 Answer the user's question using only the supplied document context.
