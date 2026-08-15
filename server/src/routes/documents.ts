@@ -132,7 +132,9 @@ documentsRoute.get('/:documentId/conversation', async (c) => {
       id: message.id,
       role: message.role,
       content: message.content,
-      sources: message.sources,
+      // During deployment an older database row/schema may not yet expose the
+      // new JSONB field. Keep the public response stable instead of omitting it.
+      sources: Array.isArray(message.sources) ? message.sources : [],
       createdAt: message.created_at,
     })),
   }

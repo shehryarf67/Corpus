@@ -33,7 +33,9 @@ export function DocumentChat({
       id: message.id,
       role: message.role,
       content: message.content,
-      sources: message.sources,
+      // API types describe the intended contract, but runtime history from an
+      // older backend/database can omit sources. Never let that crash rendering.
+      sources: Array.isArray(message.sources) ? message.sources : [],
       // Only finalized database messages are returned by the history route.
       status: "done",
     })),
@@ -213,7 +215,9 @@ export function DocumentChat({
       className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] border-t border-rule bg-chrome lg:border-t-0 lg:border-l"
     >
       <div
+        role="log"
         aria-live="polite"
+        aria-relevant="additions text"
         className="flex flex-col gap-[26px] px-[26px] pt-6 pb-2 lg:overflow-y-auto"
       >
         {messages.length === 0 ? (
@@ -225,6 +229,9 @@ export function DocumentChat({
           messages.map((message) => (
             <article
               key={message.id}
+              aria-label={
+                message.role === "user" ? "Your question" : "Assistant answer"
+              }
               className={
                 message.role === "user"
                   ? "max-w-[88%] self-end rounded-[3px] border border-rule-strong bg-raise px-[13px] py-2.5 text-[13.5px] leading-[1.55] text-bone"
@@ -232,7 +239,7 @@ export function DocumentChat({
               }
             >
               {message.status === "processing" ? (
-                <span className="font-mono text-[11px] text-graphite-dim">
+                <span role="status" className="font-mono text-[11px] text-graphite-dim">
                   Processing...
                 </span>
               ) : message.content ? (
@@ -261,7 +268,11 @@ export function DocumentChat({
                         type="button"
                         onClick={() => selectCitation(source)}
                         aria-pressed={selectedCitationId === source.chunkId}
-                        aria-label={`${source.label}, page ${source.pageNumber ?? "unknown"}`}
+                        aria-label={
+                          source.pageNumber == null
+                            ? `Select source ${source.label}; page unavailable`
+                            : `Open source ${source.label} on PDF page ${source.pageNumber}`
+                        }
                         className="cursor-pointer rounded-[3px] border border-rule-strong px-2 py-1 font-mono text-[10.5px] text-graphite transition-colors hover:border-marker-line hover:bg-marker-wash hover:text-bone focus-visible:border-marker-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marker-line aria-pressed:border-marker-line aria-pressed:bg-marker-wash aria-pressed:text-bone"
                       >
                         {source.label} · Page {source.pageNumber ?? "Unknown"}

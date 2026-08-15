@@ -151,6 +151,14 @@ body {
    show the finished composition — the illustration still tells its story
    without any movement. */
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
   .doc-float {
     animation: none;
   }

@@ -7,6 +7,7 @@ import {
   normalizePageFragments,
   type CitationTextFragment,
 } from "@/lib/citation-matching";
+import { accessibleScrollBehavior } from "@/lib/motion";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
@@ -130,7 +131,7 @@ export default function PdfDocument({
 
     const frameId = requestAnimationFrame(() => {
       firstMatchedSpan.scrollIntoView({
-        behavior: "smooth",
+        behavior: accessibleScrollBehavior(),
         block: "center",
         inline: "nearest",
       });
@@ -151,8 +152,8 @@ export default function PdfDocument({
       file={fileUrl}
       onLoadSuccess={handleDocumentLoad}
       onLoadError={onLoadError}
-      loading={<p>Loading PDF...</p>}
-      error={<p>The PDF could not be displayed.</p>}
+      loading={<p role="status" aria-live="polite">Loading PDF...</p>}
+      error={<p role="alert">The PDF could not be displayed.</p>}
     >
       {Array.from({ length: numberOfPages }, (_, index) => {
         // Array indexes start at 0, while PDF.js page numbers start at 1.

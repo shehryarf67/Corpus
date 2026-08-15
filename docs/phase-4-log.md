@@ -1489,9 +1489,10 @@ Added conversation-history.integration.test.ts. It covers newest-conversation
 selection, chronological message loading, stored citation sources, an owned
 document with no chat, and foreign-document 404 behavior.
 
-Postgres was not listening on localhost:5432, so migration 009 and this focused
-integration test could not run yet. The migration command failed with
-ECONNREFUSED before applying anything.
+Postgres was initially not listening on localhost:5432, so the first migration
+attempt failed with ECONNREFUSED. After Postgres was started, migration 009
+applied successfully and the focused conversation-history integration test
+passed 1/1.
 
 Checks that completed successfully:
 
@@ -1503,7 +1504,7 @@ web TypeScript: passed
 server TypeScript: passed
 ```
 
-When Docker/Postgres is available, run:
+Commands used for database verification:
 
 ```text
 npm run migrate -w server
@@ -1554,3 +1555,120 @@ individual stages, the UI does not claim that they are occurring in real time.
 Technical understanding remains visible in the codebase, architecture logs,
 tests, and portfolio documentation. The normal user interface stays focused on
 progress, answers, sources, pages, and recoverable errors.
+
+16. Accessibility and reduced motion
+------------------------------------
+
+Main files:
+
+```text
+web/src/components/document-chat.tsx
+web/src/components/pdf-viewer-client.tsx
+web/src/components/pdf-viewer.tsx
+web/src/components/pdf-document.tsx
+web/src/lib/motion.ts
+web/src/app/globals.css
+```
+
+Live chat announcements
+-----------------------
+
+The message container in DocumentChat is now role log with aria-live polite and
+aria-relevant additions text. A log represents chronological content appended
+over time, which matches user and assistant messages. polite tells assistive
+technology to announce updates without interrupting speech already in progress.
+
+The container does not use aria-busy while streaming. Some screen readers defer
+live-region announcements while a region is busy, which could hide token updates
+until the answer finished. Processing... has role status so the pre-token state
+is announced. Each message article has an accessible label of Your question or
+Assistant answer, and existing technical failures remain role alert.
+
+Accessible citations and keyboard behavior
+------------------------------------------
+
+Citations remain native button elements. Native buttons enter the Tab order and
+activate with Enter or Space without custom keydown code. Their aria-label now
+describes the action and destination, for example Open source S1 on PDF page 3.
+A source without page metadata announces that its page is unavailable.
+
+aria-pressed continues exposing which source is selected, and focus-visible
+styles show keyboard users where focus currently sits. The chat input is inside
+a form, so Enter submits naturally. Stop generating, Start over, Send, Previous,
+Next, and zoom controls are also native buttons.
+
+PDF control labels and keyboard access
+--------------------------------------
+
+The page-navigation and zoom containers use role group plus accessible names.
+Previous and Next now announce Previous PDF page and Next PDF page, and both use
+aria-controls to identify pdf-page-scroll-region as the region they affect.
+
+The current page counter is role status with aria-live polite and aria-atomic
+true. Atomic announcement means a change is read as the complete value, such as
+3 / 10, rather than an isolated changed character. The zoom value includes
+screen-reader-only Current zoom text while keeping the compact visible percent.
+
+The PDF page scroller is a labelled region with tabIndex 0. Keyboard users can
+focus it and use normal browser scrolling keys without needing to click inside
+the PDF first. A focus-visible outline makes that location clear.
+
+PDF preparation and loading text use role status plus aria-live polite. PDF
+rendering failure uses role alert.
+
+Reduced-motion behavior
+-----------------------
+
+prefers-reduced-motion is an operating-system/browser media preference set by
+users who find animation distracting or uncomfortable.
+
+globals.css now has a reduce media query that disables CSS animations, reduces
+transitions to almost immediate changes, and forces CSS scroll behavior to auto.
+This covers document-card pulse indicators, loading skeleton pulses, decorative
+login animation, and other CSS-driven motion while preserving static content.
+
+JavaScript scrollIntoView behavior is not fully controlled by CSS. motion.ts
+therefore defines accessibleScrollBehavior():
+
+```text
+matchMedia prefers-reduced-motion: reduce -> auto
+otherwise                                -> smooth
+```
+
+PdfViewer.scrollToPage() and PdfDocument's matched-passage scroll both call this
+helper. Users with ordinary motion preferences retain smooth page and citation
+movement. Reduced-motion users jump directly without animated scrolling.
+
+17. History source compatibility fix
+------------------------------------
+
+The document workspace crashed while rendering restored messages at
+message.sources.length. The TypeScript contract said sources was always an
+array, but runtime history returned at least one message without that property.
+
+Migration 009 had previously failed to apply because Postgres was offline. This
+created a deployment mismatch: new frontend/backend code expected the JSONB
+column while the running database still used the older message shape. TypeScript
+cannot validate database responses at runtime, so its non-optional array type did
+not prevent undefined data.
+
+Added defensive defaults at both boundaries:
+
+```text
+Hono response mapping:
+Array.isArray(message.sources) ? message.sources : []
+
+DocumentChat initialization:
+Array.isArray(message.sources) ? message.sources : []
+```
+
+The backend now keeps its public response stable during an old-row/schema
+transition, and the frontend remains fail-safe if it talks to an older backend
+or receives malformed history. Messages without source metadata render normally
+without citation buttons rather than crashing the whole document workspace.
+
+After the compatibility fix, migration 009_message_sources.sql applied
+successfully. conversation-history.integration.test.ts passed 1/1, confirming
+latest owned history, chronological messages, source restoration, empty history,
+and foreign-document 404 behavior. Web unit tests passed 13/13, both TypeScript
+checks passed, and web ESLint passed.

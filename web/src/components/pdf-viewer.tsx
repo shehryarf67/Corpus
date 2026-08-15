@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import PdfDocument from "./pdf-document"
+import { accessibleScrollBehavior } from "@/lib/motion"
 
 
 type PdfViewerProps = {
@@ -72,7 +73,7 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
         const safePage = Math.min(Math.max(pageNumber, 1), totalPages)
 
         pageRefs.current.get(safePage)?.scrollIntoView({
-            behavior: "smooth",
+            behavior: accessibleScrollBehavior(),
             block: "start",
         })
 
@@ -114,17 +115,19 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
                     {filename}
                 </p>
 
-                <div className="flex shrink-0 items-center gap-2" aria-label="PDF page navigation">
+                <div className="flex shrink-0 items-center gap-2" role="group" aria-label="PDF page navigation">
                     <button
                         type="button"
                         onClick={() => goToPage(currentPage - 1)}
                         disabled={previousDisabled}
+                        aria-label="Previous PDF page"
+                        aria-controls="pdf-page-scroll-region"
                         className="cursor-pointer rounded-[3px] border border-rule-strong px-2.5 py-1.5 font-mono text-[10.5px] text-graphite hover:text-bone disabled:cursor-not-allowed disabled:opacity-35"
                     >
                         Previous
                     </button>
 
-                    <span className="min-w-[72px] text-center font-mono text-[10.5px] text-read" aria-live="polite">
+                    <span className="min-w-[72px] text-center font-mono text-[10.5px] text-read" role="status" aria-live="polite" aria-atomic="true">
                         {totalPages === 0 ? "- / -" : `${currentPage} / ${totalPages}`}
                     </span>
 
@@ -132,13 +135,15 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
                         type="button"
                         onClick={() => goToPage(currentPage + 1)}
                         disabled={nextDisabled}
+                        aria-label="Next PDF page"
+                        aria-controls="pdf-page-scroll-region"
                         className="cursor-pointer rounded-[3px] border border-rule-strong px-2.5 py-1.5 font-mono text-[10.5px] text-graphite hover:text-bone disabled:cursor-not-allowed disabled:opacity-35"
                     >
                         Next
                     </button>
                 </div>
 
-                <div className="flex shrink-0 items-center gap-2" aria-label="PDF zoom controls">
+                <div className="flex shrink-0 items-center gap-2" role="group" aria-label="PDF zoom controls">
                     <button
                         type="button"
                         onClick={zoomOut}
@@ -149,6 +154,7 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
                         -
                     </button>
                     <span className="min-w-[44px] text-center font-mono text-[10.5px] text-read">
+                        <span className="sr-only">Current zoom: </span>
                         {Math.round(zoom * 100)}%
                     </span>
                     <button
@@ -163,7 +169,13 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
                 </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-auto bg-void p-5">
+            <div
+                id="pdf-page-scroll-region"
+                role="region"
+                aria-label="PDF pages"
+                tabIndex={0}
+                className="min-h-0 flex-1 overflow-auto bg-void p-5 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-marker-line"
+            >
                 {error ? (
                     <div role="alert" className="grid min-h-[240px] place-items-center text-center font-serif text-[14px] text-graphite">
                         {error}

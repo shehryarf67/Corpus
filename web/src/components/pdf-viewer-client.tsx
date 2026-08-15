@@ -12,7 +12,7 @@ const PdfViewerWithoutSsr = dynamic(
     ssr: false,
     loading: () => (
       <div className="grid h-full min-h-[420px] place-items-center">
-        <p className="font-mono text-[11px] text-graphite-dim">
+        <p role="status" aria-live="polite" className="font-mono text-[11px] text-graphite-dim">
           Preparing PDF viewer...
         </p>
       </div>
