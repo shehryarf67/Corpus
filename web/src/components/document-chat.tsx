@@ -5,6 +5,7 @@ import {
   streamQuery,
   type QuerySource,
 } from "@/lib/query-stream";
+import type { PersistedConversationMessage } from "@/lib/api";
 
 type ChatMessage = {
   id: string;
@@ -16,16 +17,31 @@ type ChatMessage = {
 
 type DocumentChatProps = {
   documentId: string;
+  initialConversationId?: string;
+  initialMessages?: PersistedConversationMessage[];
   onCitationSelect?: (source: QuerySource) => void;
 };
 
 export function DocumentChat({
   documentId,
+  initialConversationId,
+  initialMessages = [],
   onCitationSelect,
 }: DocumentChatProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    initialMessages.map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      sources: message.sources,
+      // Only finalized database messages are returned by the history route.
+      status: "done",
+    })),
+  );
   const [question, setQuestion] = useState("");
-  const [conversationId, setConversationId] = useState<string>();
+  const [conversationId, setConversationId] = useState<string | undefined>(
+    initialConversationId,
+  );
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedCitationId, setSelectedCitationId] = useState<string | null>(

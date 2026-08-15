@@ -185,12 +185,24 @@ export type ConversationRow = {
 // Restrict message roles to values accepted by both Postgres and Ollama.
 export type MessageRole = 'user' | 'assistant'
 
+// Assistant messages keep the source snapshot used for their final answer so
+// reopened conversations can restore citation buttons without rerunning search.
+export type StoredMessageSource = {
+  label: string
+  chunkId: string
+  documentId: string
+  pageNumber: number | null
+  content: string
+  similarity: number | null
+}
+
 // Messages belong to a conversation and are stored one turn per row.
 export type MessageRow = {
   id: string
   conversation_id: string
   role: MessageRole
   content: string
+  sources: StoredMessageSource[]
   created_at: string
 }
 
@@ -237,11 +249,32 @@ export const Conversations = {
     )
     return rows
   },
+
+  async getLatestForDocumentForUser(documentId: string, userId: string) {
+    // One joined query both enforces document ownership and selects the newest
+    // conversation. A foreign document looks the same as one with no chat.
+    const { rows } = await pool.query<ConversationRow>(
+      `SELECT conversations.*
+       FROM conversations
+       INNER JOIN documents ON documents.id = conversations.document_id
+       WHERE conversations.document_id = $1
+         AND documents.user_id = $2
+       ORDER BY conversations.created_at DESC, conversations.id DESC
+       LIMIT 1`,
+      [documentId, userId]
+    )
+    return rows[0] ?? null
+  },
 }
 
 // Message helpers persist and retrieve the ordered turns inside a conversation.
 export const Messages = {
-  async create(conversationId: string, role: MessageRole, content: string) {
+  async create(
+    conversationId: string,
+    role: MessageRole,
+    content: string,
+    sources: StoredMessageSource[] = []
+  ) {
     // Reject blank messages here as well as in Postgres, giving callers a
     // clearer error before a database round trip.
     const trimmedContent = content.trim()
@@ -250,10 +283,10 @@ export const Messages = {
     }
 
     const { rows } = await pool.query<MessageRow>(
-      `INSERT INTO messages (conversation_id, role, content)
-       VALUES ($1, $2, $3)
+      `INSERT INTO messages (conversation_id, role, content, sources)
+       VALUES ($1, $2, $3, $4::jsonb)
        RETURNING *`,
-      [conversationId, role, trimmedContent]
+      [conversationId, role, trimmedContent, JSON.stringify(sources)]
     )
     return rows[0]
   },

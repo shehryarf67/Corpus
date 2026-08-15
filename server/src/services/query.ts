@@ -189,7 +189,8 @@ export async function queryConversation(
   await Messages.create(
     prepared.conversationId,
     'assistant',
-    validated.answer
+    validated.answer,
+    validated.sources
   )
 
   return {

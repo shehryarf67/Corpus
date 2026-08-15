@@ -107,7 +107,8 @@ export async function* streamPreparedQuery(
   await Messages.create(
     prepared.conversationId,
     'assistant',
-    validated.answer
+    validated.answer,
+    validated.sources
   )
 
   // done means generation, validation, and database persistence all succeeded.

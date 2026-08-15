@@ -1,9 +1,13 @@
 import { Hono } from 'hono'
 import {
+  Conversations,
   Documents,
   Jobs,
+  Messages,
   type DocumentListRow,
   type JobStatus,
+  type MessageRole,
+  type StoredMessageSource,
 } from '../lib/db.js'
 import { deletePdf, readPdf, savePdf } from '../lib/storage.js'
 import { requireAuth, type AuthEnv } from '../middleware/auth.js'
@@ -37,6 +41,23 @@ export type DocumentsResponse = {
 
 export type SingleDocumentResponse = {
   document: DocumentResponse
+}
+
+export type ConversationMessageResponse = {
+  id: string
+  role: MessageRole
+  content: string
+  sources: StoredMessageSource[]
+  createdAt: string
+}
+
+export type DocumentConversationResponse = {
+  conversation: {
+    id: string
+    documentId: string
+    createdAt: string
+  } | null
+  messages: ConversationMessageResponse[]
 }
 
 function publicDocument(document: DocumentListRow): DocumentResponse {
@@ -74,6 +95,46 @@ documentsRoute.get('/:documentId', async (c) => {
   if (!document) return c.json({ error: 'Document not found' }, 404)
   const response: SingleDocumentResponse = {
     document: publicDocument(document),
+  }
+  return c.json(response)
+})
+
+documentsRoute.get('/:documentId/conversation', async (c) => {
+  const documentId = c.req.param('documentId')
+  const userId = c.get('user').id
+
+  // Check the document separately so an owned document with no conversation
+  // returns an empty successful state, while missing/foreign documents are 404.
+  const document = await Documents.getByIdForUser(documentId, userId)
+  if (!document) return c.json({ error: 'Document not found' }, 404)
+
+  const conversation = await Conversations.getLatestForDocumentForUser(
+    documentId,
+    userId
+  )
+
+  if (!conversation) {
+    const response: DocumentConversationResponse = {
+      conversation: null,
+      messages: [],
+    }
+    return c.json(response)
+  }
+
+  const messages = await Messages.getByConversationId(conversation.id)
+  const response: DocumentConversationResponse = {
+    conversation: {
+      id: conversation.id,
+      documentId: conversation.document_id,
+      createdAt: conversation.created_at,
+    },
+    messages: messages.map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      sources: message.sources,
+      createdAt: message.created_at,
+    })),
   }
   return c.json(response)
 })

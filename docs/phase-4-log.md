@@ -1315,3 +1315,197 @@ Test result on 2026-08-15:
 ESLint passed
 TypeScript noEmit check passed
 ```
+
+14. Persisted conversation IDs and reopened chat history
+--------------------------------------------------------
+
+Main files:
+
+```text
+server/migrations/009_message_sources.sql
+server/src/lib/db.ts
+server/src/services/query.ts
+server/src/services/query-stream.ts
+server/src/routes/documents.ts
+web/src/lib/api.ts
+web/src/app/documents/[id]/page.tsx
+web/src/components/document-workspace-client.tsx
+web/src/components/document-chat.tsx
+server/test/conversation-history.integration.test.ts
+```
+
+Same-page conversation reuse was already present
+------------------------------------------------
+
+DocumentChat stores conversationId in React state. The first question sends no
+ID. prepareQuery() in server/src/services/query.ts sees the missing value and
+calls Conversations.create(documentId). streamPreparedQuery() sends the new ID
+in its conversation SSE event before answer tokens begin.
+
+streamQuery() dispatches that event to DocumentChat's onConversation callback:
+
+```text
+onConversation: id -> setConversationId(id)
+```
+
+The next handleSubmit() call reads the saved state and includes conversationId
+in the POST body. prepareQuery() then calls Conversations.getByIdForUser() rather
+than creating another conversation. It also checks conversation.document_id
+against the requested documentId, so history from one PDF cannot be mixed with
+another PDF.
+
+This already supported follow-up questions while the component remained
+mounted. It did not survive refresh because React state is memory, not storage.
+
+Persisting citation sources with assistant messages
+---------------------------------------------------
+
+The existing messages table stored role and content but not the sources used by
+an assistant answer. Reopening could therefore restore answer text but could not
+recreate citation buttons or PDF navigation.
+
+Migration 009_message_sources.sql adds a non-null sources JSONB array with an
+empty-array default and a database check requiring JSON array data. Existing
+messages become sources = [] automatically. Their old citation metadata cannot
+be reconstructed, but new messages preserve it.
+
+db.ts defines StoredMessageSource using the frontend/backend source fields:
+
+```text
+label
+chunkId
+documentId
+pageNumber
+content
+similarity
+```
+
+Messages.create() now accepts sources as an optional fourth argument. User
+messages and no-source answers continue using the default empty array. Completed
+assistant paths in query.ts and query-stream.ts pass validated.sources when they
+save validated.answer. PostgreSQL returns JSONB as the source array on MessageRow.
+
+The sources are a snapshot of the exact retrieval context cited by that answer.
+Reopening does not rerun embedding, retrieval, RRF, or reranking, which could
+produce different results later.
+
+Ownership-scoped latest conversation lookup
+-------------------------------------------
+
+Conversations.getLatestForDocumentForUser(documentId, userId) joins
+conversations to documents and requires documents.user_id. It orders newest
+first and returns one row. The join prevents a caller from retrieving a foreign
+conversation merely by knowing its document ID.
+
+The new protected endpoint is:
+
+```text
+GET /documents/:documentId/conversation
+```
+
+It lives in the existing documents router, so documentsRoute.use(requireAuth)
+protects it automatically. The route first calls Documents.getByIdForUser(). A
+missing or foreign document returns the same 404.
+
+An owned document with no conversation is a valid empty chat and returns:
+
+```text
+{
+  conversation: null,
+  messages: []
+}
+```
+
+When a conversation exists, the route calls
+Messages.getByConversationId(conversation.id). That helper orders by created_at
+and id, so the frontend receives natural user/assistant order. The route maps
+database snake_case rows into a camelCase public response containing the
+conversation and each message's ID, role, content, sources, and createdAt.
+
+Server-rendered history loading
+-------------------------------
+
+web/src/lib/api.ts defines DocumentConversationResponse and
+getDocumentConversation(documentId). It uses the existing request() helper, so
+this Next server request forwards the HttpOnly cookie to Hono and preserves Hono
+errors through ApiError.
+
+WorkspacePage first calls loadDocument(id). This retains the established 404
+handling for missing and foreign documents. After ownership succeeds, it calls
+getDocumentConversation(id) and passes these serializable values into
+DocumentWorkspaceClient:
+
+```text
+initialConversationId = persistedChat.conversation?.id
+initialMessages       = persistedChat.messages
+```
+
+DocumentWorkspaceClient forwards both into DocumentChat. DocumentChat uses lazy
+useState initializers to convert every persisted message into its local
+ChatMessage shape. Database messages are finalized records, so they start with
+status done. Their database IDs remain React keys, and their stored sources
+immediately recreate citation buttons.
+
+DocumentChat initializes conversationId from initialConversationId. Therefore a
+question asked after reopening sends the persisted ID and continues the same
+backend history rather than creating a new conversation.
+
+Complete reopen and follow-up flow
+----------------------------------
+
+```text
+open /documents/:id
+-> WorkspacePage.loadDocument(id)
+-> getDocumentConversation(id)
+-> Next request() forwards cookie to Hono
+-> requireAuth validates active database session
+-> document ownership check
+-> newest conversation lookup
+-> ordered messages plus stored sources
+-> DocumentChat initializes messages and conversationId
+
+ask follow-up
+-> handleSubmit()
+-> streamQuery() includes persisted conversationId
+-> prepareQuery() verifies conversation ownership and document relationship
+-> load recent messages for rewrite and generation
+-> save new user and assistant messages
+-> save assistant validated sources
+-> live UI updates through SSE
+
+refresh again
+-> newest conversation and all finalized messages are restored
+-> citation buttons have the same source snapshots
+```
+
+Start over still clears local conversationId and messages. The next submitted
+question omits conversationId, causing prepareQuery() to create a new database
+conversation. Older conversations are preserved rather than deleted.
+
+Verification state on 2026-08-15
+--------------------------------
+
+Added conversation-history.integration.test.ts. It covers newest-conversation
+selection, chronological message loading, stored citation sources, an owned
+document with no chat, and foreign-document 404 behavior.
+
+Postgres was not listening on localhost:5432, so migration 009 and this focused
+integration test could not run yet. The migration command failed with
+ECONNREFUSED before applying anything.
+
+Checks that completed successfully:
+
+```text
+web unit tests: 13 passed
+server unit tests: 50 passed
+web ESLint: passed
+web TypeScript: passed
+server TypeScript: passed
+```
+
+When Docker/Postgres is available, run:
+
+```text
+npm run migrate -w server
+npx tsx --env-file=server/.env --test --test-concurrency=1 server/test/conversation-history.integration.test.ts
+```

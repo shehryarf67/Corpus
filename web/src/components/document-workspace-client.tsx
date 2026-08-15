@@ -4,10 +4,13 @@ import { useRef, useState } from "react";
 import { DocumentChat } from "@/components/document-chat";
 import { PdfViewerClient } from "@/components/pdf-viewer-client";
 import type { QuerySource } from "@/lib/query-stream";
+import type { PersistedConversationMessage } from "@/lib/api";
 
 type DocumentWorkspaceClientProps = {
   documentId: string;
   filename: string;
+  initialConversationId?: string;
+  initialMessages: PersistedConversationMessage[];
 };
 
 type PageNavigationRequest = {
@@ -21,6 +24,8 @@ type PageNavigationRequest = {
 export function DocumentWorkspaceClient({
   documentId,
   filename,
+  initialConversationId,
+  initialMessages,
 }: DocumentWorkspaceClientProps) {
   const [pageRequest, setPageRequest] =
     useState<PageNavigationRequest | null>(null);
@@ -59,6 +64,8 @@ export function DocumentWorkspaceClient({
 
       <DocumentChat
         documentId={documentId}
+        initialConversationId={initialConversationId}
+        initialMessages={initialMessages}
         onCitationSelect={handleCitationSelect}
       />
     </div>

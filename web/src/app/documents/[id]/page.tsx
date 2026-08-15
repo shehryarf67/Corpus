@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { DocumentWorkspaceClient } from "@/components/document-workspace-client";
 import { TopBar, TopBarDivider } from "@/components/top-bar";
-import { getDocument, type DocumentResponse } from "@/lib/api";
+import {
+  getDocument,
+  getDocumentConversation,
+  type DocumentResponse,
+} from "@/lib/api";
 import { ApiError } from "@/lib/api-error";
 
 export const metadata: Metadata = {
@@ -29,6 +33,9 @@ export default async function WorkspacePage(
 ) {
   const { id } = await props.params;
   const document = await loadDocument(id);
+  // The document lookup above handles missing/foreign resources consistently.
+  // Once it succeeds, load the newest persisted chat for this owned document.
+  const persistedChat = await getDocumentConversation(id);
 
   return (
     // Panes scroll internally on desktop; below lg they stack and the page
@@ -51,6 +58,8 @@ export default async function WorkspacePage(
       <DocumentWorkspaceClient
         documentId={document.id}
         filename={document.filename}
+        initialConversationId={persistedChat.conversation?.id}
+        initialMessages={persistedChat.messages}
       />
     </div>
   );

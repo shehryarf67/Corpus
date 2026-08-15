@@ -59,6 +59,30 @@ export type UploadDocumentResponse = {
   status: DocumentJobStatus;
 };
 
+export type PersistedConversationMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  sources: Array<{
+    label: string;
+    chunkId: string;
+    documentId: string;
+    pageNumber: number | null;
+    content: string;
+    similarity: number | null;
+  }>;
+  createdAt: string;
+};
+
+export type DocumentConversationResponse = {
+  conversation: {
+    id: string;
+    documentId: string;
+    createdAt: string;
+  } | null;
+  messages: PersistedConversationMessage[];
+};
+
 export async function requestRaw(
   path: string, // Only necessary route e.g /jobs/123
   options: RequestInit = {}, // Second arg for fetch options, e.g. method, headers, body
@@ -155,6 +179,15 @@ export function getDocument(
   // path parameter instead of allowing it to change the requested route.
   return request<SingleDocumentResponse>(
     `/documents/${encodeURIComponent(documentId)}`,
+  );
+}
+
+/** Load the newest persisted chat for one owned document, if it has one. */
+export function getDocumentConversation(
+  documentId: string,
+): Promise<DocumentConversationResponse> {
+  return request<DocumentConversationResponse>(
+    `/documents/${encodeURIComponent(documentId)}/conversation`,
   );
 }
 
