@@ -519,6 +519,64 @@ failed    = one pipeline stage threw and its message was recorded
 
 Safe claiming may set parsing before `processIngestionJob()` sets parsing again. That repeated assignment is harmless, although the boundary could be cleaned up later so one layer owns the exact transition.
 
+### Missing original PDF recovery
+
+Citation correction and ingestion retry are unrelated. Removing the second
+Ollama citation request did not remove `POST /documents/:documentId/retry`.
+That route still creates a new ingestion job for a failed document, so it must
+confirm that the original PDF can actually be processed again.
+
+`pdfExists(storageKey)` was added to storage.ts. It resolves only a validated
+storage key, uses `stat()` to confirm the path is a real file, returns false for
+ENOENT, and rethrows unexpected filesystem errors such as permission failures.
+
+The retry route now follows this order:
+
+```text
+load ownership-scoped document
+-> missing or foreign: 404
+-> storage_key missing: 409 with upload-again message
+-> physical PDF missing: same clear 409 response
+-> lock and recheck document in Postgres
+-> latest job must be failed
+-> clear partial chunks and create one pending retry job
+```
+
+The missing-file response is:
+
+```json
+{
+  "error": "Original PDF no longer exists. Upload it again.",
+  "code": "original_pdf_missing"
+}
+```
+
+The frontend retry action already displays backend ApiError messages, so the
+failed document card now tells the user to upload again without additional UI
+wiring. No doomed pending job is created when the file is unavailable.
+
+The route owns the physical filesystem check. db.ts remains persistence-only,
+but `Jobs.retryFailedForUser()` now locks the document and rechecks that its
+`storage_key` is still present before inserting a job. This closes the database
+race while keeping filesystem policy out of the repository.
+
+Document deletion already used one ownership-scoped DELETE. PostgreSQL cascades
+that deletion to pending jobs, chunks, conversations, and messages. The route
+then deletes the stored PDF. The database and filesystem cannot share a single
+transaction, so file deletion remains best-effort; a filesystem failure can
+leave an inaccessible orphaned file but cannot restore the deleted user data.
+
+Upload ordering already saves the PDF before creating the database document.
+If storage itself fails, no document row exists. If document or job creation
+fails afterward, the upload catch block deletes any document row and stored PDF
+that were already created.
+
+Integration tests verify successful retry, missing storage_key, a storage_key
+whose physical file disappeared, document deletion cascading its pending job
+and deleting its PDF, and storage-stage upload failure leaving no document row.
+All 65 server unit tests, 28 Postgres integration tests, and server TypeScript
+passed after this change.
+
 ---
 
 ## Open items / not done yet
@@ -526,6 +584,5 @@ Safe claiming may set parsing before `processIngestionJob()` sets parsing again.
 - MAX_CHUNK_TOKENS = 500 is a guess, not measured. Once the readme's eval harness (recall@k, MRR) exists, should actually test different values against real retrieval quality instead of assuming 500 is right. Revisit this later, not now.
 - No overlap between NORMAL chunk boundaries (between different blocks), only inside splitOversizedBlock. Decided on purpose, paragraph boundaries are real breaks, not worth the complexity there.
 - char offsets inside splitOversizedBlock are approximate (rejoining sentences/words with a single space doesnt preserve original whitespace exactly, and now overlap means consecutive pieces share text too), not pixel exact against the source pdf. Acceptable for now.
-- Retrying a job is not idempotent yet. If chunks were inserted but marking the job done failed, retrying could hit duplicate chunk indexes. Before adding retries, decide whether to delete/rebuild that document's chunks or make persistence an atomic replace operation.
 - Ollama generation is part of the query phase, not ingestion. It now has response checks, output-token limits, and request timeouts. See query-log.md for the current generation behavior.
 - If ever revisited: swap local embeddings back to Voyage and local generation back to Claude for a "production mode", since the rest of the pipeline (chunking, schema) barely needs to change either way.

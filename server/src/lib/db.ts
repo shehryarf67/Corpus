@@ -391,6 +391,7 @@ export type Job = {
 export type RetryFailedJobResult =
   | { outcome: 'created'; job: Job }
   | { outcome: 'not_found' }
+  | { outcome: 'missing_pdf' }
   | { outcome: 'not_failed' }
 
 // Jobs let uploads return quickly while PDF ingestion runs in the background.
@@ -476,8 +477,11 @@ export const Jobs = {
       // Lock the owned document for the whole retry transaction. Two quick
       // retry requests then run one after the other instead of creating two
       // pending jobs for the same PDF.
-      const { rows: documents } = await client.query<{ id: string }>(
-        `SELECT id
+      const { rows: documents } = await client.query<{
+        id: string
+        storage_key: string | null
+      }>(
+        `SELECT id, storage_key
          FROM documents
          WHERE id = $1
            AND user_id = $2
@@ -488,6 +492,13 @@ export const Jobs = {
       if (!documents[0]) {
         await client.query('ROLLBACK')
         return { outcome: 'not_found' }
+      }
+
+      // The route checks the physical file, while this locked database check
+      // prevents creating a retry if the key was cleared concurrently.
+      if (!documents[0].storage_key) {
+        await client.query('ROLLBACK')
+        return { outcome: 'missing_pdf' }
       }
 
       const { rows: latestJobs } = await client.query<Job>(

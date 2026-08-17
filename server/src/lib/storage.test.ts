@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { after, before, test } from 'node:test'
-import { deletePdf, readPdf, savePdf } from './storage.js'
+import { deletePdf, pdfExists, readPdf, savePdf } from './storage.js'
 
 let testDirectory: string
 let previousStorageDirectory: string | undefined
@@ -29,9 +29,11 @@ test('savePdf stores a valid PDF under a generated key', async () => {
   const storageKey = await savePdf(pdf)
 
   assert.match(storageKey, /^[0-9a-f-]+\.pdf$/i)
+  assert.equal(await pdfExists(storageKey), true)
   assert.deepEqual(await readPdf(storageKey), pdf)
 
   await deletePdf(storageKey)
+  assert.equal(await pdfExists(storageKey), false)
   await assert.rejects(readPdf(storageKey))
 })
 
@@ -41,5 +43,6 @@ test('savePdf rejects data without a PDF signature', async () => {
 
 test('storage functions reject unsafe storage keys', async () => {
   await assert.rejects(readPdf('../outside.pdf'), /Invalid PDF storage key/)
+  await assert.rejects(pdfExists('../outside.pdf'), /Invalid PDF storage key/)
   await assert.rejects(deletePdf('document.pdf'), /Invalid PDF storage key/)
 })

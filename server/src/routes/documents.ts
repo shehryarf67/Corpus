@@ -9,7 +9,7 @@ import {
   type MessageRole,
   type StoredMessageSource,
 } from '../lib/db.js'
-import { deletePdf, readPdf, savePdf } from '../lib/storage.js'
+import { deletePdf, pdfExists, readPdf, savePdf } from '../lib/storage.js'
 import { requireAuth, type AuthEnv } from '../middleware/auth.js'
 
 export const documentsRoute = new Hono<AuthEnv>()
@@ -199,9 +199,31 @@ documentsRoute.delete('/:documentId', async (c) => {
 
 documentsRoute.post('/:documentId/retry', async (c) => {
   try {
+    const documentId = c.req.param('documentId')
+    const userId = c.get('user').id
+    const document = await Documents.getByIdForUser(documentId, userId)
+
+    // Keep missing and foreign documents indistinguishable, matching every
+    // other ownership-scoped document endpoint.
+    if (!document) {
+      return c.json({ error: 'Document not found' }, 404)
+    }
+
+    // A retry can only reprocess the original bytes. Creating another pending
+    // job without them would guarantee the worker fails in exactly the same way.
+    if (!document.storage_key || !(await pdfExists(document.storage_key))) {
+      return c.json(
+        {
+          error: 'Original PDF no longer exists. Upload it again.',
+          code: 'original_pdf_missing',
+        },
+        409
+      )
+    }
+
     const result = await Jobs.retryFailedForUser(
-      c.req.param('documentId'),
-      c.get('user').id
+      documentId,
+      userId
     )
 
     // Missing and foreign documents intentionally produce the same response.
@@ -211,6 +233,16 @@ documentsRoute.post('/:documentId/retry', async (c) => {
 
     if (result.outcome === 'not_failed') {
       return c.json({ error: 'Only failed documents can be retried' }, 409)
+    }
+
+    if (result.outcome === 'missing_pdf') {
+      return c.json(
+        {
+          error: 'Original PDF no longer exists. Upload it again.',
+          code: 'original_pdf_missing',
+        },
+        409
+      )
     }
 
     return c.json(
