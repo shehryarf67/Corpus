@@ -2050,3 +2050,47 @@ also benefited from Ollama reusing the identical prompt. On this machine, prompt
 evaluation for a new context while running entirely on CPU is the main remaining
 bottleneck. Warm-up remains useful, but prompt-size reduction, a smaller model,
 or supported GPU acceleration are now higher-impact optimizations.
+
+26. Reduce final generation context from five sources to three
+---------------------------------------------------------------
+
+prepareQuery() still performs vector and keyword retrieval over 20 candidates,
+fuses those results, and sends the strongest 15 candidates through the
+cross-encoder. Only the final context selection changed from the best five
+reranked chunks to the best three. Retrieval breadth and reranking quality are
+therefore preserved while Ollama receives less text.
+
+Before changing the limit, the real AQ-BERT question prompt was measured:
+
+```text
+                            five sources    three sources
+document context tokens:       2338            1419
+complete prompt tokens:        2594            1675
+```
+
+Three sources remove 919 prompt tokens, about 35%. The retrieval evaluation was
+also rerun before the change. Every expected chunk across all eight evaluation
+questions ranked first or second after cross-encoder reranking, so top-three
+context preserved 100% retrieval recall for the current evaluation set.
+
+The same real streamed question was then run with llama3.2 preloaded, matching
+the conditions of the previous five-source test:
+
+```text
+                              five sources    three sources    change
+retrieval and prompt setup:      1323 ms         1371 ms       normal variance
+wait for first token:           90462 ms        54527 ms       39.7% faster
+complete answer generation:     95199 ms        58935 ms       38.1% faster
+citation correction:            10196 ms            0 ms       not needed this run
+complete query:                106803 ms        60383 ms       43.5% faster
+```
+
+The factual end-to-end assertions passed, including all four expected NLP task
+names, streaming completion, and database persistence. This verifies that the
+smaller prompt materially improves CPU generation for the tested document while
+preserving the expected answer.
+
+The missing citation-correction cost is encouraging but should not be treated as
+guaranteed: citation formatting is model-generated and another question may
+still trigger correction. The first-token reduction is the cleaner measure of
+the context change because it occurs before citation validation or correction.
