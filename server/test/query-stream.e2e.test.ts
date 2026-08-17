@@ -125,6 +125,7 @@ test('real /query/stream sends incremental Ollama tokens and persists the final 
       .join('')
     const done = events.at(-1)
     const finalAnswer = String(done?.data.answer ?? '')
+    const finalSources = done?.data.sources
 
     // The done answer may normalize citations, but its factual content should
     // still match the evidence in page 5, chunk 12 of the ingested test PDF.
@@ -132,6 +133,8 @@ test('real /query/stream sends incremental Ollama tokens and persists the final 
       assert.match(finalAnswer, new RegExp(task, 'i'))
     }
     assert.ok(streamedAnswer.length > 0)
+    assert.ok(Array.isArray(finalSources), 'done must include source metadata')
+    assert.ok(finalSources.length > 0, 'the grounded answer must cite a source')
 
     conversationId = String(events[0]?.data.conversationId ?? '')
     assert.ok(conversationId)
@@ -143,6 +146,10 @@ test('real /query/stream sends incremental Ollama tokens and persists the final 
       ['user', 'assistant']
     )
     assert.equal(storedMessages[1]?.content, finalAnswer)
+    assert.ok(
+      storedMessages[1]?.sources.length,
+      'persisted assistant message must keep its source metadata'
+    )
   } finally {
     if (conversationId) {
       await pool.query('DELETE FROM conversations WHERE id = $1', [conversationId])

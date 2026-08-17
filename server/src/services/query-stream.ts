@@ -1,12 +1,11 @@
 import { validateCitations } from '../lib/citations.js'
-import { selectCitationPassages } from '../lib/citation-passages.js'
+import {
+  attributeAnswerSources,
+  selectCitationPassages,
+} from '../lib/citation-passages.js'
 import type { ContextSource } from '../lib/context.js'
 import { Messages } from '../lib/db.js'
-import { chat, chatStream } from '../lib/generation.js'
-import {
-  buildCitationRetryMessages,
-  CITATION_CORRECTION_OPTIONS,
-} from '../lib/prompt.js'
+import { chatStream } from '../lib/generation.js'
 import {
   logQueryTiming,
   timeQueryStage,
@@ -40,19 +39,6 @@ export type QueryStreamEvent =
       answer: string
       sources: ContextSource[]
     }
-
-function comparableAnswerText(answer: string): string {
-  // Ignore citation markers, punctuation, case, and whitespace when deciding
-  // whether the correction changed the prose the user already watched stream.
-  return (answer.match(/[\p{L}\p{N}]+/gu) ?? [])
-    .filter((word) => !/^S\d+$/i.test(word))
-    .join(' ')
-    .toLocaleLowerCase()
-}
-
-function materiallyDiffers(original: string, corrected: string): boolean {
-  return comparableAnswerText(original) !== comparableAnswerText(corrected)
-}
 
 // Turn one prepared query into a sequence of application-level stream events.
 // Errors are deliberately not caught here. chatStream(), citation validation,
@@ -134,78 +120,18 @@ export async function* streamPreparedQuery(
     status: 'finalizing',
   }
 
-  let validated = timeSynchronousQueryStage(
+  const validated = timeSynchronousQueryStage(
     timing,
     'citation_validation',
     () => validateCitations(rawAnswer, prepared.sources)
   )
-  let citationAnswer = validated.answer
+  const needsLocalAttribution =
+    validated.sources.length === 0 || validated.invalidLabels.length > 0
 
-  // Tokens have already reached the browser, so do not stream a second answer.
-  // Instead, ask once for corrected labels and use that response to choose the
-  // source chips carried by the final done event.
-  if (validated.sources.length === 0 || validated.invalidLabels.length > 0) {
-    console.warn('Ollama returned missing or invalid stream citations; correcting once')
-
-    try {
-      const correctionMessages = buildCitationRetryMessages(
-        prepared.messages,
-        rawAnswer,
-        prepared.sources.map((source) => source.label)
-      )
-      const correctedAnswer = await timeQueryStage(
-        timing,
-        'citation_correction',
-        () => chat(correctionMessages, CITATION_CORRECTION_OPTIONS)
-      )
-      const corrected = timeSynchronousQueryStage(
-        timing,
-        'citation_revalidation',
-        () => validateCitations(correctedAnswer, prepared.sources)
-      )
-
-      if (corrected.sources.length > 0) {
-        // Keep the labelled correction internally even when its prose is not
-        // sent to the browser. It tells passage selection which claim used each
-        // source label.
-        citationAnswer = corrected.answer
-        // Usually the correction only adds [S#] markers. Keep the prose already
-        // visible in the browser in that case, and update only its source chips.
-        // If Ollama genuinely rewrote the wording, done.answer remains the
-        // authoritative final version and the frontend replaces the draft once.
-        validated = {
-          answer: materiallyDiffers(validated.answer, corrected.answer)
-            ? corrected.answer
-            : validated.answer,
-          sources: corrected.sources,
-          invalidLabels: corrected.invalidLabels,
-        }
-      } else {
-        // The answer was generated from these retrieved chunks. Preserve them
-        // as fallback source metadata instead of making every source disappear
-        // because the small local model failed citation formatting twice.
-        validated = {
-          ...validated,
-          sources:
-            validated.sources.length > 0
-              ? validated.sources
-              : prepared.sources,
-        }
-        console.warn('Citation correction returned no valid labels; using retrieved sources')
-      }
-    } catch (error) {
-      // Citation correction is an enhancement after a complete answer already
-      // exists. A correction timeout must not turn that successful stream into
-      // an error; finish with the retrieved source metadata instead.
-      console.warn('Citation correction failed; using retrieved sources', error)
-      validated = {
-        ...validated,
-        sources:
-          validated.sources.length > 0
-            ? validated.sources
-            : prepared.sources,
-      }
-    }
+  if (needsLocalAttribution) {
+    console.warn(
+      'Ollama returned missing or invalid stream citations; attributing sources locally'
+    )
   }
 
   if (validated.invalidLabels.length > 0) {
@@ -218,11 +144,13 @@ export async function* streamPreparedQuery(
     timing,
     'passage_selection',
     () =>
-      selectCitationPassages(
-        citationAnswer,
-        validated.sources,
-        prepared.sources
-      )
+      needsLocalAttribution
+        ? attributeAnswerSources(validated.answer, prepared.sources)
+        : selectCitationPassages(
+            validated.answer,
+            validated.sources,
+            prepared.sources
+          )
   )
 
   // Do not save one row per token. Save only the complete validated answer.

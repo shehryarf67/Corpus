@@ -37,6 +37,23 @@ function claimsByLabel(answer: string): Map<string, string[]> {
   return claims
 }
 
+function answerClaims(answer: string): string[] {
+  return answer
+    .replace(CITATION_PATTERN, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(/(?<=[.!?])\s+/)
+    .map((claim) => claim.trim())
+    .filter(Boolean)
+    // A refusal reports missing evidence; it must not receive a source chip
+    // merely because a retrieved chunk shares generic words with it.
+    .filter(
+      (claim) =>
+        !claim.toLocaleLowerCase().includes('could not find the answer') &&
+        !claim.toLocaleLowerCase().includes('could not find any searchable content')
+    )
+}
+
 function passageCandidates(content: string): string[] {
   const candidates: string[] = []
   const paragraphs = content
@@ -156,4 +173,63 @@ export function selectCitationPassages(
       highlightText: bestMatch.passage,
     }
   })
+}
+
+/**
+ * Attribute model prose to retrieved evidence when the model omitted or
+ * invented citation labels. Claims are temporary matching inputs; returned
+ * citations remain the supporting database chunks plus their best passages.
+ */
+export function attributeAnswerSources(
+  answer: string,
+  candidateSources: readonly ContextSource[]
+): ContextSource[] {
+  const attributedByChunk = new Map<
+    string,
+    { source: ContextSource; passage: string; score: number; order: number }
+  >()
+
+  for (const [claimIndex, claim] of answerClaims(answer).entries()) {
+    let bestMatch:
+      | { source: ContextSource; passage: string; score: number }
+      | null = null
+
+    for (const source of candidateSources) {
+      const match = bestPassage([claim], source.content)
+      if (!match || (bestMatch && match.score <= bestMatch.score)) continue
+
+      bestMatch = {
+        source,
+        passage: match.passage,
+        score: match.score,
+      }
+    }
+
+    if (!bestMatch) continue
+
+    const existing = attributedByChunk.get(bestMatch.source.chunkId)
+    if (!existing) {
+      attributedByChunk.set(bestMatch.source.chunkId, {
+        ...bestMatch,
+        order: claimIndex,
+      })
+      continue
+    }
+
+    // One chunk may support several claims. Return one source chip and keep
+    // whichever claim produced its strongest, safest highlight passage.
+    if (bestMatch.score > existing.score) {
+      attributedByChunk.set(bestMatch.source.chunkId, {
+        ...bestMatch,
+        order: existing.order,
+      })
+    }
+  }
+
+  return [...attributedByChunk.values()]
+    .sort((left, right) => left.order - right.order)
+    .map(({ source, passage }) => ({
+      ...source,
+      highlightText: passage,
+    }))
 }

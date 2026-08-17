@@ -129,7 +129,7 @@ test('streamPreparedQuery emits events in order and saves one complete answer', 
   }
 })
 
-test('streamPreparedQuery corrects missing citations without replacing unchanged streamed prose', async () => {
+test('streamPreparedQuery attributes missing citations without another Ollama request', async () => {
   let documentId: string | undefined
 
   try {
@@ -155,40 +155,25 @@ test('streamPreparedQuery corrects missing citations without replacing unchanged
       similarity: 1,
     }
     let requestNumber = 0
-    const requestBodies: Array<{
-      options?: { num_predict?: number }
-      keep_alive?: string
-    }> = []
 
     globalThis.fetch = async (_input, init) => {
       requestNumber += 1
-      requestBodies.push(JSON.parse(String(init?.body)) as {
-        options?: { num_predict?: number }
-        keep_alive?: string
-      })
-
-      if (requestNumber === 1) {
-        return new Response(
-          new ReadableStream({
-            start(controller) {
-              controller.enqueue(
-                encoder.encode(
-                  '{"message":{"content":"Mars is known as the Red Planet."},"done":false}\n'
-                )
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode(
+                '{"message":{"content":"Mars is known as the Red Planet."},"done":false}\n'
               )
-              controller.enqueue(
-                encoder.encode('{"message":{"content":""},"done":true}\n')
-              )
-              controller.close()
-            },
-          }),
-          { status: 200 }
-        )
-      }
-
-      return Response.json({
-        message: { content: 'Mars is known as the Red Planet [S1].' },
-      })
+            )
+            controller.enqueue(
+              encoder.encode('{"message":{"content":""},"done":true}\n')
+            )
+            controller.close()
+          },
+        }),
+        { status: 200 }
+      )
     }
 
     const events = await collectEvents({
@@ -197,10 +182,7 @@ test('streamPreparedQuery corrects missing citations without replacing unchanged
       sources: [source],
     })
 
-    assert.equal(requestNumber, 2)
-    const correctionRequestBody = requestBodies[1]
-    assert.equal(correctionRequestBody?.options?.num_predict, 192)
-    assert.equal(correctionRequestBody?.keep_alive, '10m')
+    assert.equal(requestNumber, 1)
     const streamedAnswer = events
       .filter((event) => event.type === 'token')
       .map((event) => event.text)
@@ -210,8 +192,8 @@ test('streamPreparedQuery corrects missing citations without replacing unchanged
     assert.equal(streamedAnswer, 'Mars is known as the Red Planet.')
     assert.equal(done?.type, 'done')
     if (done?.type === 'done') {
-      // The visible prose stays byte-for-byte stable; the corrected citation
-      // selection arrives separately for source-chip rendering.
+      // The visible prose stays byte-for-byte stable; deterministic attribution
+      // supplies source-chip metadata without asking Ollama to rewrite it.
       assert.equal(done.answer, streamedAnswer)
       assert.deepEqual(done.sources.map((item) => item.label), ['S1'])
       assert.equal(done.sources[0]?.highlightText, source.content)

@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { ContextSource } from './context.js'
-import { selectCitationPassages } from './citation-passages.js'
+import {
+  attributeAnswerSources,
+  selectCitationPassages,
+} from './citation-passages.js'
 
 function source(content: string): ContextSource {
   return {
@@ -87,4 +90,60 @@ test('repairs a model label that points at the wrong retrieved chunk', () => {
   assert.equal(result?.chunkId, 'supporting-chunk')
   assert.equal(result?.pageNumber, 6)
   assert.equal(result?.highlightText, actualEvidence.content)
+})
+
+test('attributes an unlabeled answer claim to its strongest supporting chunk', () => {
+  const unrelated = {
+    ...source('Venus has a thick atmosphere of carbon dioxide.'),
+    label: 'S1',
+    chunkId: 'venus-chunk',
+  }
+  const supporting = {
+    ...source('Mars is commonly known as the Red Planet.'),
+    label: 'S2',
+    chunkId: 'mars-chunk',
+    pageNumber: 4,
+  }
+
+  const [result] = attributeAnswerSources(
+    'Mars is known as the Red Planet.',
+    [unrelated, supporting]
+  )
+
+  assert.equal(result?.label, 'S2')
+  assert.equal(result?.chunkId, 'mars-chunk')
+  assert.equal(result?.pageNumber, 4)
+  assert.equal(result?.highlightText, supporting.content)
+})
+
+test('returns one source when the same chunk supports multiple claims', () => {
+  const supporting = source(
+    'Mars is known as the Red Planet. Mars has two moons named Phobos and Deimos.'
+  )
+
+  const results = attributeAnswerSources(
+    'Mars is the Red Planet. Its moons are Phobos and Deimos.',
+    [supporting]
+  )
+
+  assert.equal(results.length, 1)
+  assert.equal(results[0]?.chunkId, supporting.chunkId)
+})
+
+test('does not invent an attribution when no chunk supports the answer', () => {
+  const results = attributeAnswerSources(
+    'The application stores encrypted medical records.',
+    [source('Primitive. Developer workflow. Budget output cards.')]
+  )
+
+  assert.deepEqual(results, [])
+})
+
+test('does not attach evidence to a RAG refusal', () => {
+  const results = attributeAnswerSources(
+    'I could not find the answer in the document.',
+    [source('The document contains a generic answer section.')]
+  )
+
+  assert.deepEqual(results, [])
 })

@@ -1,13 +1,6 @@
 import type { ChatMessage } from './generation.js'
 import type { MessageRow } from './db.js'
 
-// Citation repair is a short formatting operation, not another full answer.
-// Its smaller budget prevents a missing label from adding another long model run.
-export const CITATION_CORRECTION_OPTIONS = {
-  maxTokens: 192,
-  timeoutMs: 45_000,
-} as const
-
 const ANSWER_SYSTEM_PROMPT = `You are a document question-answering assistant.
 
 Answer the user's question using only the supplied document context.
@@ -58,28 +51,6 @@ ${question}`
     {
       role: 'user',
       content: userMessage,
-    },
-  ]
-}
-
-// If Ollama answered without usable citations, keep the original grounded
-// prompt and show it the answer that needs correcting. The model is asked to
-// rewrite that answer, not to perform retrieval or answer from memory again.
-export function buildCitationRetryMessages(
-  originalMessages: readonly ChatMessage[],
-  answer: string,
-  availableLabels: readonly string[]
-): ChatMessage[] {
-  return [
-    ...originalMessages,
-    { role: 'assistant', content: answer },
-    {
-      role: 'user',
-      content: `Rewrite your previous answer with valid citations.
-
-Every factual claim must have a supporting citation directly after it. Use only these source labels: ${availableLabels.map((label) => `[${label}]`).join(', ')}.
-
-Do not add new facts. Do not mention this correction request. Return only the corrected answer.`,
     },
   ]
 }

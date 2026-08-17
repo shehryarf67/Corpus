@@ -2094,3 +2094,60 @@ The missing citation-correction cost is encouraging but should not be treated as
 guaranteed: citation formatting is model-generated and another question may
 still trigger correction. The first-token reduction is the cleaner measure of
 the context change because it occurs before citation validation or correction.
+
+27. Deterministic citation attribution replaces generation retry
+---------------------------------------------------------------
+
+The query pipeline no longer asks Ollama to rewrite a completed answer when its
+source labels are missing or invalid. The original answer remains unchanged and
+only one generation request is made. The citation instructions remain in the
+main prompt because valid model labels still provide useful claim-to-source
+intent when the model follows them.
+
+citation-passages.ts now exports attributeAnswerSources(). It removes citation
+markers, splits the answer into sentence-sized claims, and treats those claims as
+temporary matching inputs. Each claim is compared with passage candidates from
+all three chunks that genuinely entered the generation prompt. Existing lexical
+coverage, precision, and exact-number scoring choose the strongest support.
+
+Only a match above the existing confidence threshold becomes a citation. A weak
+"least bad" chunk is not returned. Refusal sentences receive no citation. If one
+chunk supports several claims, the returned sources are deduplicated by chunk ID
+and the strongest passage becomes that source's highlightText.
+
+The return value contains source chunks, not claim objects. Every returned item
+keeps its chunk ID, document ID, page, full source content, retrieval metadata,
+and label, while adding the precise supporting passage as highlightText. The
+frontend can therefore render its existing source chip and navigate/highlight
+the PDF without requiring an inline [S#] marker in the generated prose.
+
+Both queryConversation() and streamPreparedQuery() now follow this decision:
+
+```text
+valid model labels
+-> verify labels and passages with selectCitationPassages()
+
+missing or invalid model labels
+-> attribute claims locally with attributeAnswerSources()
+```
+
+The old CITATION_CORRECTION_OPTIONS and buildCitationRetryMessages() code was
+removed. The streaming path no longer risks changing prose after tokens have
+already been displayed, timing out during a secondary generation, or spending
+another roughly ten seconds on citation formatting.
+
+Tests cover unlabeled answers, selection among competing chunks, multiple claims
+supported by one chunk, unsupported claims, refusals, number-sensitive matching,
+wrong model labels, and table-heading avoidance. The database-backed streaming
+test proves the missing-label path makes exactly one Ollama request, returns the
+supporting source and highlight, and persists both with the unchanged answer.
+
+The real three-source AQ-BERT query passed with all expected facts, streamed
+tokens, returned source metadata, and persisted sources. Its uncached run took
+59.3 seconds total. That answer supplied valid labels itself, so deterministic
+fallback was not needed in that particular run. A second identical run completed
+in 6.9 seconds because Ollama reused the identical prompt; that cached number is
+not used as the optimization benchmark.
+
+Verification passed: 65 server unit tests, 24 PostgreSQL integration tests, the
+real Ollama/PostgreSQL SSE test, server TypeScript, and git diff validation.

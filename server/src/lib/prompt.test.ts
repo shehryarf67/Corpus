@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {
-  buildAnswerMessages,
-  buildCitationRetryMessages,
-} from './prompt.js'
+import { buildAnswerMessages } from './prompt.js'
 
 test('buildAnswerMessages creates grounded system and user messages', () => {
   const question = 'What two networks are included in the framework?'
@@ -64,24 +61,4 @@ test('buildAnswerMessages places conversation history before the current questio
   assert.equal(messages[1]?.content, 'What is AQ-BERT?')
   assert.equal(messages[2]?.content, 'AQ-BERT is a quantization method.')
   assert.match(messages[3]?.content ?? '', /What tasks was it tested on\?/)
-})
-
-test('buildCitationRetryMessages asks for one grounded citation correction', () => {
-  const originalMessages = buildAnswerMessages('What is AQ-BERT?', 'context')
-  const retryMessages = buildCitationRetryMessages(
-    originalMessages,
-    'AQ-BERT is a quantization method.',
-    ['S1', 'S2']
-  )
-
-  assert.equal(retryMessages.length, originalMessages.length + 2)
-  assert.deepEqual(retryMessages.slice(0, originalMessages.length), originalMessages)
-  assert.equal(retryMessages.at(-2)?.role, 'assistant')
-  assert.equal(
-    retryMessages.at(-2)?.content,
-    'AQ-BERT is a quantization method.'
-  )
-  assert.equal(retryMessages.at(-1)?.role, 'user')
-  assert.match(retryMessages.at(-1)?.content ?? '', /\[S1\], \[S2\]/)
-  assert.match(retryMessages.at(-1)?.content ?? '', /do not add new facts/i)
 })

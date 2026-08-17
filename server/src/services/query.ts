@@ -2,13 +2,12 @@ import { Chunks, Conversations, Documents, Messages } from '../lib/db.js'
 import { embed } from '../lib/embeddings.js'
 import { buildContext, type ContextSource } from '../lib/context.js'
 import { chat, type ChatMessage } from '../lib/generation.js'
-import {
-  buildAnswerMessages,
-  buildCitationRetryMessages,
-  CITATION_CORRECTION_OPTIONS,
-} from '../lib/prompt.js'
+import { buildAnswerMessages } from '../lib/prompt.js'
 import { validateCitations } from '../lib/citations.js'
-import { selectCitationPassages } from '../lib/citation-passages.js'
+import {
+  attributeAnswerSources,
+  selectCitationPassages,
+} from '../lib/citation-passages.js'
 import { fuseWithRRF } from '../lib/rrf.js'
 import { rerankChunks } from '../lib/reranker.js'
 import { rewriteQuestion } from '../lib/rewrite.js'
@@ -215,30 +214,18 @@ export async function queryConversation(
   const rawAnswer = await timeQueryStage(timing, 'answer_generation', () =>
     chat(prepared.messages)
   )
-  let validated = timeSynchronousQueryStage(
+  const validated = timeSynchronousQueryStage(
     timing,
     'citation_validation',
     () => validateCitations(rawAnswer, prepared.sources)
   )
 
-  // Citations are model-written text, so the first answer can omit them or
-  // invent a label. Retry exactly once with the same grounded prompt and the
-  // first answer, asking Ollama only to correct its citation formatting.
-  if (validated.sources.length === 0 || validated.invalidLabels.length > 0) {
-    console.warn('Ollama returned missing or invalid citations; retrying once')
+  const needsLocalAttribution =
+    validated.sources.length === 0 || validated.invalidLabels.length > 0
 
-    const retryMessages = buildCitationRetryMessages(
-      prepared.messages,
-      rawAnswer,
-      prepared.sources.map((source) => source.label)
-    )
-    const retryAnswer = await timeQueryStage(timing, 'citation_correction', () =>
-      chat(retryMessages, CITATION_CORRECTION_OPTIONS)
-    )
-    validated = timeSynchronousQueryStage(
-      timing,
-      'citation_revalidation',
-      () => validateCitations(retryAnswer, prepared.sources)
+  if (needsLocalAttribution) {
+    console.warn(
+      'Ollama returned missing or invalid citations; attributing sources locally'
     )
   }
 
@@ -252,11 +239,13 @@ export async function queryConversation(
     timing,
     'passage_selection',
     () =>
-      selectCitationPassages(
-        validated.answer,
-        validated.sources,
-        prepared.sources
-      )
+      needsLocalAttribution
+        ? attributeAnswerSources(validated.answer, prepared.sources)
+        : selectCitationPassages(
+            validated.answer,
+            validated.sources,
+            prepared.sources
+          )
   )
 
   await timeQueryStage(timing, 'assistant_message_save', () =>
