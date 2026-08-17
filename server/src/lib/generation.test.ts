@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
-import { chat, chatStream, type ChatMessage } from './generation.js'
+import {
+  chat,
+  chatStream,
+  warmGenerationModel,
+  type ChatMessage,
+} from './generation.js'
 
 const originalFetch = globalThis.fetch
 const messages: ChatMessage[] = [{ role: 'user', content: 'Hello' }]
@@ -58,6 +63,26 @@ test('chat accepts a smaller operation-specific token limit', async () => {
     (requestBody as { options: { num_predict: number } }).options.num_predict,
     96
   )
+})
+
+test('warmGenerationModel preloads Ollama without generating an answer', async () => {
+  let requestUrl = ''
+  let requestBody: unknown
+
+  globalThis.fetch = async (input, init) => {
+    requestUrl = String(input)
+    requestBody = JSON.parse(String(init?.body))
+    return Response.json({ done: true })
+  }
+
+  await warmGenerationModel()
+
+  assert.equal(requestUrl, 'http://localhost:11434/api/generate')
+  assert.deepEqual(requestBody, {
+    model: 'llama3.2',
+    stream: false,
+    keep_alive: '10m',
+  })
 })
 
 test('chatStream yields text from multiple NDJSON lines', async () => {

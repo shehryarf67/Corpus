@@ -4,6 +4,7 @@ const MODEL = 'llama3.2'
 const ANSWER_MAX_TOKENS = 512
 const ANSWER_TIMEOUT_MS = 120_000
 const OLLAMA_KEEP_ALIVE = '10m'
+const OLLAMA_WARMUP_TIMEOUT_MS = 180_000
 
 export type ChatMessage = {
   role: 'system' | 'user' | 'assistant'
@@ -20,6 +21,33 @@ type OllamaStreamChunk = {
     content?: string
   }
   error?: string
+}
+
+// Ask Ollama to load the generation model without producing an answer. Ollama
+// officially supports an empty generate request for preloading; keep_alive then
+// leaves the loaded model in memory for the same window used by real queries.
+export async function warmGenerationModel(): Promise<void> {
+  const res = await fetch(`${OLLAMA_URL}/api/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: MODEL,
+      stream: false,
+      keep_alive: OLLAMA_KEEP_ALIVE,
+    }),
+    // Warm-up runs in the background and can take over 100 seconds on this
+    // machine's CPU, so it gets a little more time than a user-facing answer.
+    signal: AbortSignal.timeout(OLLAMA_WARMUP_TIMEOUT_MS),
+  })
+
+  if (!res.ok) {
+    throw new Error(
+      `Ollama warm-up failed: ${res.status} ${await res.text()}`
+    )
+  }
+
+  // Consume the response so the HTTP connection can be cleanly reused.
+  await res.arrayBuffer()
 }
 
 // Parse one complete NDJSON line from Ollama. Some stream events contain no

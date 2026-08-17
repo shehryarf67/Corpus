@@ -1974,7 +1974,79 @@ All retrieval and reranking finished in about 1.3 seconds, but Ollama needed abo
 the remaining answer streamed in about 4.7 seconds. Citation correction added a
 further 10.2 seconds because the first answer lacked usable citation labels.
 
-Therefore the next optimization should target Ollama/model startup and model
-residency first, then reduce how often citation correction is required. Changing
-keyword SQL, vector SQL, or RRF would save milliseconds while leaving nearly all
-of the user-visible delay untouched.
+Therefore the next optimization should target Ollama prompt processing and local
+inference, then reduce how often citation correction is required. Changing keyword
+SQL, vector SQL, or RRF would save milliseconds while leaving nearly all of the
+user-visible delay untouched.
+
+Back-to-back cold and warm query comparison
+-------------------------------------------
+
+The same real streamed query was later run twice back-to-back. Before the first
+run, `ollama ps` showed no loaded model. After that run it showed llama3.2 loaded
+for the configured ten-minute keep-alive window, with a 2.6 GB allocation and
+`100% CPU` processing.
+
+```text
+                                cold run       warm run
+retrieval and prompt setup:      1448 ms        1899 ms
+wait for first token:          102708 ms        1456 ms
+complete answer generation:    107944 ms        6527 ms
+citation correction:            10802 ms       10408 ms
+complete query:                120318 ms       18902 ms
+```
+
+This first comparison proved that `keep_alive: "10m"` worked, but it did not by
+itself prove that model loading caused the entire 101-second difference. The warm
+run repeated the exact same question and context, allowing Ollama to reuse prompt
+work as well as keeping the model loaded. A later isolated warm-up test below
+separated these effects.
+
+25. Automatic Ollama warm-up
+----------------------------
+
+generation.ts now exports warmGenerationModel(). It sends an empty, non-streaming
+request to Ollama's /api/generate endpoint for the same llama3.2 model used by
+chat() and chatStream(). An empty request asks Ollama to load the model without
+generating throwaway answer text. The request also sends `keep_alive: "10m"`, so
+the loaded model remains available for nearby real questions.
+
+The warm-up timeout is 180 seconds so a slow local load does not fail prematurely.
+The response body is consumed even though its contents are not needed, allowing
+the underlying HTTP connection to be reused cleanly.
+
+index.ts calls warmGenerationModel() after serve() starts listening. It does not
+await the call before starting the HTTP server. Authentication, uploads, document
+viewing, and other non-LLM features therefore become available immediately while
+Ollama loads in the background. A successful warm-up logs its elapsed time.
+
+Warm-up failure is caught and logged rather than crashing the backend. If Ollama
+is closed, the rest of Corpus can still run, and a later query can make its normal
+request after Ollama becomes available. A focused unit test verifies that warm-up
+uses /api/generate, llama3.2, non-streaming mode, and the ten-minute keep-alive.
+
+Real warm-up verification and corrected conclusion
+--------------------------------------------------
+
+The helper was then tested against a genuinely unloaded Ollama instance. The
+empty warm-up completed in 7.6 seconds. `ollama ps` afterward showed llama3.2
+loaded at 2.6 GB, using 100% CPU, with nine minutes remaining. This proves that
+the helper and keep-alive behavior work.
+
+A real RAG query was immediately submitted while that model was still loaded:
+
+```text
+retrieval and prompt setup:       1323 ms
+wait for first token:            90462 ms
+complete answer generation:      95199 ms
+citation correction:             10196 ms
+complete query:                 106803 ms
+```
+
+The preload saved some cold-start time, but a new full RAG prompt still took about
+90.5 seconds before its first token. Therefore model loading was not the main
+source of the original 102.7-second delay. The earlier 1.46-second repeated run
+also benefited from Ollama reusing the identical prompt. On this machine, prompt
+evaluation for a new context while running entirely on CPU is the main remaining
+bottleneck. Warm-up remains useful, but prompt-size reduction, a smaller model,
+or supported GPU acceleration are now higher-impact optimizations.
