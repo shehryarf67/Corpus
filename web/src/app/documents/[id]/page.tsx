@@ -38,9 +38,9 @@ export default async function WorkspacePage(
   const persistedChat = await getDocumentConversation(id);
 
   return (
-    // Panes scroll internally on desktop; below lg they stack and the page
-    // scrolls normally, which avoids needing a mobile pane switcher for now.
-    <div className="flex min-h-[100dvh] flex-col lg:h-[100dvh] lg:overflow-hidden">
+    // The viewport itself stays fixed. Each active pane owns its scrolling,
+    // preventing mobile users from scrolling through the whole PDF to chat.
+    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden">
       <TopBar>
         <TopBarDivider />
         <div className="flex min-w-0 items-baseline gap-3">

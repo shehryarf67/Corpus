@@ -38,10 +38,35 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
     const [totalPages, setTotalPages] = useState(0)
     const [zoom, setZoom] = useState(1)
     const [error, setError] = useState<string | null>(null)
+    const [pageWidth, setPageWidth] = useState<number | undefined>(undefined)
 
     // Reference for every container of each page in the PDF. 
     // This allows for scrolling to a specific page when the user navigates through the document.
     const pageRefs = useRef(new Map<number, HTMLDivElement>())
+    const scrollRegionRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        const scrollRegion = scrollRegionRef.current
+        if (!scrollRegion) return
+
+        // Base page width follows the actual pane width. Zoom is applied on
+        // top of this value, keeping 100% readable without body overflow.
+        function updatePageWidth() {
+            const currentRegion = scrollRegionRef.current
+            if (!currentRegion) return
+
+            const styles = getComputedStyle(currentRegion)
+            const horizontalPadding =
+                Number.parseFloat(styles.paddingLeft) +
+                Number.parseFloat(styles.paddingRight)
+            setPageWidth(Math.max(1, Math.floor(currentRegion.clientWidth - horizontalPadding)))
+        }
+
+        updatePageWidth()
+        const observer = new ResizeObserver(updatePageWidth)
+        observer.observe(scrollRegion)
+        return () => observer.disconnect()
+    }, [])
 
     function handleLoadSuccess(numberOfPages: number) {
         setTotalPages(numberOfPages)
@@ -109,9 +134,9 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
     const nextDisabled = totalPages === 0 || currentPage >= totalPages
 
     return (
-        <section className="flex h-full min-h-0 flex-col" aria-label={`PDF viewer for ${filename}`}>
-            <div className="flex shrink-0 items-center justify-between gap-4 border-b border-rule bg-chrome px-4 py-2.5">
-                <p className="min-w-0 truncate font-mono text-[10.5px] text-graphite-dim">
+        <section className="flex h-full min-h-0 w-full flex-col" aria-label={`PDF viewer for ${filename}`}>
+            <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 border-b border-rule bg-chrome px-3 py-2.5 sm:flex sm:justify-between sm:gap-4 sm:px-4">
+                <p className="col-span-2 min-w-0 truncate font-mono text-[10.5px] text-graphite-dim sm:col-span-1">
                     {filename}
                 </p>
 
@@ -122,9 +147,10 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
                         disabled={previousDisabled}
                         aria-label="Previous PDF page"
                         aria-controls="pdf-page-scroll-region"
-                        className="cursor-pointer rounded-[3px] border border-rule-strong px-2.5 py-1.5 font-mono text-[10.5px] text-graphite hover:text-bone disabled:cursor-not-allowed disabled:opacity-35"
+                        className="grid h-9 min-w-9 cursor-pointer place-items-center rounded-[3px] border border-rule-strong px-2 font-mono text-[10.5px] text-graphite hover:text-bone disabled:cursor-not-allowed disabled:opacity-35 sm:block sm:px-2.5 sm:py-1.5"
                     >
-                        Previous
+                        <span aria-hidden="true" className="text-base sm:hidden">‹</span>
+                        <span className="hidden sm:inline">Previous</span>
                     </button>
 
                     <span className="min-w-[72px] text-center font-mono text-[10.5px] text-read" role="status" aria-live="polite" aria-atomic="true">
@@ -137,9 +163,10 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
                         disabled={nextDisabled}
                         aria-label="Next PDF page"
                         aria-controls="pdf-page-scroll-region"
-                        className="cursor-pointer rounded-[3px] border border-rule-strong px-2.5 py-1.5 font-mono text-[10.5px] text-graphite hover:text-bone disabled:cursor-not-allowed disabled:opacity-35"
+                        className="grid h-9 min-w-9 cursor-pointer place-items-center rounded-[3px] border border-rule-strong px-2 font-mono text-[10.5px] text-graphite hover:text-bone disabled:cursor-not-allowed disabled:opacity-35 sm:block sm:px-2.5 sm:py-1.5"
                     >
-                        Next
+                        <span aria-hidden="true" className="text-base sm:hidden">›</span>
+                        <span className="hidden sm:inline">Next</span>
                     </button>
                 </div>
 
@@ -149,7 +176,7 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
                         onClick={zoomOut}
                         disabled={zoom <= 0.75}
                         aria-label="Zoom out"
-                        className="cursor-pointer rounded-[3px] border border-rule-strong px-2.5 py-1.5 font-mono text-[11px] text-graphite hover:text-bone disabled:cursor-not-allowed disabled:opacity-35"
+                        className="grid h-9 min-w-9 cursor-pointer place-items-center rounded-[3px] border border-rule-strong px-2 font-mono text-[11px] text-graphite hover:text-bone disabled:cursor-not-allowed disabled:opacity-35"
                     >
                         -
                     </button>
@@ -162,7 +189,7 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
                         onClick={zoomIn}
                         disabled={zoom >= 2}
                         aria-label="Zoom in"
-                        className="cursor-pointer rounded-[3px] border border-rule-strong px-2.5 py-1.5 font-mono text-[11px] text-graphite hover:text-bone disabled:cursor-not-allowed disabled:opacity-35"
+                        className="grid h-9 min-w-9 cursor-pointer place-items-center rounded-[3px] border border-rule-strong px-2 font-mono text-[11px] text-graphite hover:text-bone disabled:cursor-not-allowed disabled:opacity-35"
                     >
                         +
                     </button>
@@ -171,10 +198,11 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
 
             <div
                 id="pdf-page-scroll-region"
+                ref={scrollRegionRef}
                 role="region"
                 aria-label="PDF pages"
                 tabIndex={0}
-                className="min-h-0 flex-1 overflow-auto bg-void p-5 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-marker-line"
+                className="min-h-0 max-w-full flex-1 overflow-auto bg-void p-2 sm:p-5 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-marker-line"
             >
                 {error ? (
                     <div role="alert" className="grid min-h-[240px] place-items-center text-center font-serif text-[14px] text-graphite">
@@ -184,6 +212,7 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
                     <PdfDocument
                         fileUrl={fileUrl}
                         zoom={zoom}
+                        pageWidth={pageWidth}
                         pageRefs={pageRefs}
                         onLoadSuccess={handleLoadSuccess}
                         onLoadError={handleLoadError}

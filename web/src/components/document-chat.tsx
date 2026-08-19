@@ -21,6 +21,7 @@ type DocumentChatProps = {
   initialConversationId?: string;
   initialMessages?: PersistedConversationMessage[];
   onCitationSelect?: (source: QuerySource) => void;
+  onOpenDocument?: () => void;
 };
 
 export function DocumentChat({
@@ -28,6 +29,7 @@ export function DocumentChat({
   initialConversationId,
   initialMessages = [],
   onCitationSelect,
+  onOpenDocument,
 }: DocumentChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
     initialMessages.map((message) => ({
@@ -231,13 +233,26 @@ export function DocumentChat({
   return (
     <section
       aria-label="Conversation"
-      className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] border-t border-rule bg-chrome lg:border-t-0 lg:border-l"
+      className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] bg-chrome lg:grid-rows-[minmax(0,1fr)_auto] lg:border-l lg:border-rule"
     >
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-rule px-4 py-2.5 lg:hidden">
+        <span className="font-mono text-[10.5px] tracking-[0.12em] text-graphite-dim uppercase">
+          Conversation
+        </span>
+        <button
+          type="button"
+          onClick={onOpenDocument}
+          className="min-h-9 cursor-pointer rounded-[3px] border border-rule-strong px-3 font-mono text-[10.5px] text-graphite transition-colors hover:border-marker-line hover:text-bone"
+        >
+          Go to document
+        </button>
+      </div>
+
       <div
         role="log"
         aria-live="polite"
         aria-relevant="additions text"
-        className="flex flex-col gap-[26px] px-[26px] pt-6 pb-2 lg:overflow-y-auto"
+        className="flex min-w-0 flex-col gap-[26px] overflow-y-auto px-4 pt-5 pb-2 sm:px-[26px] sm:pt-6"
       >
         {messages.length === 0 ? (
           <p className="m-auto max-w-xs text-center text-[13px] leading-6 text-graphite-dim">
@@ -251,11 +266,11 @@ export function DocumentChat({
               aria-label={
                 message.role === "user" ? "Your question" : "Assistant answer"
               }
-              className={
+              className={`min-w-0 [overflow-wrap:anywhere] ${
                 message.role === "user"
                   ? "max-w-[88%] self-end rounded-[3px] border border-rule-strong bg-raise px-[13px] py-2.5 text-[13.5px] leading-[1.55] text-bone"
                   : "max-w-full text-[13.8px] leading-[1.72] text-read"
-              }
+              }`}
             >
               {message.status === "processing" && !message.content ? (
                 <span role="status" className="font-mono text-[11px] text-graphite-dim">
@@ -301,7 +316,7 @@ export function DocumentChat({
                             ? `Select source ${source.label}; page unavailable`
                             : `Open source ${source.label} on PDF page ${source.pageNumber}`
                         }
-                        className="cursor-pointer rounded-[3px] border border-rule-strong px-2 py-1 font-mono text-[10.5px] text-graphite transition-colors hover:border-marker-line hover:bg-marker-wash hover:text-bone focus-visible:border-marker-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marker-line aria-pressed:border-marker-line aria-pressed:bg-marker-wash aria-pressed:text-bone"
+                        className="max-w-full cursor-pointer whitespace-normal rounded-[3px] border border-rule-strong px-2 py-1.5 text-left font-mono text-[10.5px] [overflow-wrap:anywhere] text-graphite transition-colors hover:border-marker-line hover:bg-marker-wash hover:text-bone focus-visible:border-marker-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marker-line aria-pressed:border-marker-line aria-pressed:bg-marker-wash aria-pressed:text-bone"
                       >
                         {source.label} · Page {source.pageNumber ?? "Unknown"}
                       </button>
@@ -316,10 +331,10 @@ export function DocumentChat({
 
       <form
         onSubmit={handleSubmit}
-        className="border-t border-rule bg-chrome px-[26px] pt-3.5 pb-[18px]"
+        className="border-t border-rule bg-chrome px-4 pt-3.5 pb-3 sm:px-[26px] sm:pb-[18px]"
       >
         {(messages.length > 0 || isStreaming) && (
-          <div className="mb-2 flex justify-end gap-2">
+          <div className="mb-2 flex flex-wrap justify-end gap-2">
             {isStreaming && (
               <button
                 type="button"
@@ -340,12 +355,12 @@ export function DocumentChat({
         )}
 
         {error && (
-          <p role="alert" className="mb-2 text-[12px] text-red-400">
+          <p role="alert" className="mb-2 [overflow-wrap:anywhere] text-[12px] text-red-400">
             {error}
           </p>
         )}
 
-        <div className="flex items-center gap-2.5 rounded-[4px] border border-rule-strong bg-void py-1 pr-1 pl-[13px] transition-colors focus-within:border-marker-line">
+        <div className="flex min-w-0 items-center gap-2.5 rounded-[4px] border border-rule-strong bg-void py-1 pr-1 pl-[13px] transition-colors focus-within:border-marker-line">
           <input
             type="text"
             value={question}
@@ -353,7 +368,7 @@ export function DocumentChat({
             disabled={isStreaming}
             placeholder="Ask about this paper..."
             aria-label="Ask a question"
-            className="flex-1 border-0 bg-transparent py-2 text-[13.5px] text-bone outline-none placeholder:text-graphite-dim disabled:opacity-60"
+            className="min-w-0 flex-1 border-0 bg-transparent py-2 text-[13.5px] text-bone outline-none placeholder:text-graphite-dim disabled:opacity-60"
           />
           <button
             type="submit"

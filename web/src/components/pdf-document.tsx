@@ -22,6 +22,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 type PdfDocumentProps = {
   fileUrl: string;
   zoom: number;
+  pageWidth?: number;
   pageRefs: RefObject<Map<number, HTMLDivElement>>;
   onLoadSuccess: (numberOfPages: number) => void;
   onLoadError: (error: Error) => void;
@@ -124,6 +125,7 @@ function applyCitationHighlight({
 export default function PdfDocument({
   fileUrl,
   zoom,
+  pageWidth,
   pageRefs,
   onLoadSuccess,
   onLoadError,
@@ -188,6 +190,7 @@ export default function PdfDocument({
           <div
             key={pageNumber}
             data-page-number={pageNumber}
+            className="mx-auto mb-4 w-fit max-w-none last:mb-0"
             ref={(element) => {
               // Save each rendered page container for navigation and the
               // IntersectionObserver we will add in the next step.
@@ -200,6 +203,7 @@ export default function PdfDocument({
           >
             <Page
               pageNumber={pageNumber}
+              width={pageWidth}
               scale={zoom}
               // Canvas draws the visible page. The transparent text layer sits
               // over it so text remains selectable/searchable and gives future

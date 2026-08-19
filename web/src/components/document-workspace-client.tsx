@@ -20,6 +20,8 @@ type PageNavigationRequest = {
   content?: string;
 };
 
+type WorkspacePanel = "document" | "chat";
+
 /** Own the state shared between the sibling PDF and chat panes. */
 export function DocumentWorkspaceClient({
   documentId,
@@ -29,9 +31,16 @@ export function DocumentWorkspaceClient({
 }: DocumentWorkspaceClientProps) {
   const [pageRequest, setPageRequest] =
     useState<PageNavigationRequest | null>(null);
+  // Small screens show one pane at a time. Both panes remain mounted, so
+  // switching does not reset PDF zoom/page state or the conversation stream.
+  const [activePanel, setActivePanel] = useState<WorkspacePanel>("chat");
   const nextRequestId = useRef(0);
 
   function handleCitationSelect(source: QuerySource) {
+    // A citation always opens the document pane. Page navigation remains
+    // fail-soft when extraction could not identify a page number.
+    setActivePanel("document");
+
     // Some extraction failures may leave a source without a page. Keep the
     // citation selectable, but only ask the PDF viewer to scroll when a real
     // page number is available.
@@ -50,27 +59,72 @@ export function DocumentWorkspaceClient({
   }
 
   return (
-    <div className="flex flex-1 flex-col lg:grid lg:min-h-0 lg:grid-cols-[minmax(0,1.12fr)_minmax(0,0.88fr)]">
-      <section
-        aria-label="Document"
-        className="min-w-0 min-h-[640px] overflow-hidden lg:min-h-0"
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div
+        role="tablist"
+        aria-label="Workspace view"
+        className="grid shrink-0 grid-cols-2 border-b border-rule bg-chrome p-1.5 lg:hidden"
       >
-        <PdfViewerClient
-          documentId={documentId}
-          filename={filename}
-          targetPage={pageRequest?.pageNumber}
-          targetPageRequestId={pageRequest?.requestId}
-          targetChunkId={pageRequest?.chunkId}
-          targetContent={pageRequest?.content}
-        />
-      </section>
+        <button
+          id="document-workspace-tab"
+          type="button"
+          role="tab"
+          aria-selected={activePanel === "document"}
+          aria-controls="document-workspace-panel"
+          onClick={() => setActivePanel("document")}
+          className="min-h-10 rounded-[3px] px-3 font-mono text-[11px] text-graphite transition-colors hover:text-bone aria-selected:bg-raise aria-selected:text-bone"
+        >
+          Document
+        </button>
+        <button
+          id="chat-workspace-tab"
+          type="button"
+          role="tab"
+          aria-selected={activePanel === "chat"}
+          aria-controls="chat-workspace-panel"
+          onClick={() => setActivePanel("chat")}
+          className="min-h-10 rounded-[3px] px-3 font-mono text-[11px] text-graphite transition-colors hover:text-bone aria-selected:bg-raise aria-selected:text-bone"
+        >
+          Chat
+        </button>
+      </div>
 
-      <DocumentChat
-        documentId={documentId}
-        initialConversationId={initialConversationId}
-        initialMessages={initialMessages}
-        onCitationSelect={handleCitationSelect}
-      />
+      <div className="min-h-0 flex-1 lg:grid lg:grid-cols-[minmax(0,1.12fr)_minmax(0,0.88fr)]">
+        <section
+          id="document-workspace-panel"
+          role="tabpanel"
+          aria-labelledby="document-workspace-tab"
+          className={`${
+            activePanel === "document" ? "flex" : "hidden"
+          } h-full min-h-0 min-w-0 overflow-hidden lg:flex`}
+        >
+          <PdfViewerClient
+            documentId={documentId}
+            filename={filename}
+            targetPage={pageRequest?.pageNumber}
+            targetPageRequestId={pageRequest?.requestId}
+            targetChunkId={pageRequest?.chunkId}
+            targetContent={pageRequest?.content}
+          />
+        </section>
+
+        <div
+          id="chat-workspace-panel"
+          role="tabpanel"
+          aria-labelledby="chat-workspace-tab"
+          className={`${
+            activePanel === "chat" ? "block" : "hidden"
+          } h-full min-h-0 min-w-0 lg:block`}
+        >
+          <DocumentChat
+            documentId={documentId}
+            initialConversationId={initialConversationId}
+            initialMessages={initialMessages}
+            onCitationSelect={handleCitationSelect}
+            onOpenDocument={() => setActivePanel("document")}
+          />
+        </div>
+      </div>
     </div>
   );
 }
