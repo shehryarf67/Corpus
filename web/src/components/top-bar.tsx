@@ -9,14 +9,14 @@ import { Wordmark } from "./wordmark";
  */
 export function TopBar({ children }: { children?: React.ReactNode }) {
   return (
-    <header className="flex h-[52px] items-center gap-[18px] border-b border-rule bg-chrome px-4">
+    <header className="flex h-[52px] min-w-0 items-center gap-3 border-b border-rule bg-chrome px-3 sm:gap-[18px] sm:px-4">
       <Link href="/documents" className="shrink-0">
         <Wordmark />
       </Link>
 
       {children}
 
-      <div className="ml-auto flex items-center gap-3">
+      <div className="ml-auto flex shrink-0 items-center gap-3">
         <AccountMenu />
       </div>
     </header>

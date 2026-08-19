@@ -26,7 +26,7 @@ export function DocumentThumbnail({
           src={`/api/documents/${encodeURIComponent(documentId)}/thumbnail`}
           alt={`First page of ${title}`}
           fill
-          sizes="(min-width: 1024px) 288px, (min-width: 640px) 50vw, 100vw"
+          sizes="(min-width: 1024px) 288px, (min-width: 560px) 50vw, min(380px, 100vw)"
           className="object-contain object-top"
           unoptimized
           onError={() => setImageFailed(true)}

@@ -92,7 +92,7 @@ function CardDetails({ document }: { document: DocumentResponse }) {
         {document.filename}
       </div>
 
-      <div className="mt-2 flex items-start gap-2">
+      <div className="mt-2 flex min-w-0 items-start gap-2">
         <span className="mt-[5px]">
           <StatusDot status={document.status} />
         </span>
@@ -100,11 +100,11 @@ function CardDetails({ document }: { document: DocumentResponse }) {
             readable is the whole point — and sits brighter than the usual meta
             line because it's asking for attention. */}
         {isFailed && document.error ? (
-          <span className="font-mono text-[10.5px] leading-[1.5] text-graphite">
+          <span className="min-w-0 flex-1 [overflow-wrap:anywhere] font-mono text-[10.5px] leading-[1.5] text-graphite">
             couldn&rsquo;t be processed — {document.error}
           </span>
         ) : (
-          <span className="truncate font-mono text-[10.5px] leading-[1.5] text-graphite-dim">
+          <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] leading-[1.5] text-graphite-dim">
             {statusLine(document)}
           </span>
         )}
@@ -140,14 +140,14 @@ function DocumentCard({ document }: { document: DocumentResponse }) {
     const stateClass =
       document.status !== "failed" ? "cursor-not-allowed opacity-60" : "";
     return (
-      <li>
+      <li className="mx-auto w-full max-w-[380px] min-[560px]:max-w-none">
         <div className={`group block ${stateClass}`}>{body}</div>
       </li>
     );
   }
 
   return (
-    <li>
+    <li className="mx-auto w-full max-w-[380px] min-[560px]:max-w-none">
       <Link href={`/documents/${document.id}`} className="group block">
         {body}
       </Link>
@@ -157,13 +157,13 @@ function DocumentCard({ document }: { document: DocumentResponse }) {
 
 function EmptyState() {
   return (
-    <div className="flex flex-1 items-center justify-center px-6 py-16">
+    <div className="flex flex-1 items-center justify-center px-4 py-10 sm:px-6 sm:py-16">
       {/* Dashed edge reads as a drop target — drag-and-drop lands here later. */}
-      <div className="w-full max-w-[520px] rounded-[4px] border border-dashed border-rule-strong px-8 py-14 text-center">
+      <div className="w-full max-w-[520px] rounded-[4px] border border-dashed border-rule-strong px-5 py-10 text-center sm:px-8 sm:py-14">
         <div className="font-mono text-[10.5px] tracking-[0.14em] text-graphite-dim uppercase">
           Library
         </div>
-        <h1 className="mt-4 font-serif text-[32px] leading-[1.1] font-semibold tracking-[-0.02em]">
+        <h1 className="mt-4 font-serif text-[28px] leading-[1.1] font-semibold tracking-[-0.02em] sm:text-[32px]">
           Add your first document.
         </h1>
         <p className="mx-auto mt-3 max-w-[42ch] font-serif text-[14.5px] leading-[1.66] text-graphite">
@@ -232,9 +232,9 @@ export default async function DocumentsPage() {
         {documents.length === 0 ? (
           <EmptyState />
         ) : (
-          <main className="mx-auto w-full max-w-[960px] px-6 py-12">
-          <div className="mb-8 flex items-end justify-between gap-6">
-            <div>
+          <main className="mx-auto w-full max-w-[960px] px-4 py-8 sm:px-6 sm:py-12">
+          <div className="mb-7 flex flex-col items-stretch gap-5 sm:mb-8 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
+            <div className="min-w-0">
               <div className="font-mono text-[10.5px] tracking-[0.14em] text-graphite-dim uppercase">
                 Library
               </div>
@@ -253,7 +253,7 @@ export default async function DocumentsPage() {
 
           {/* Three across at the widest: with a handful of documents that
               leaves fewer orphaned cards on the last row than four would. */}
-          <ul className="grid grid-cols-1 gap-x-6 gap-y-9 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="grid grid-cols-1 gap-x-5 gap-y-8 min-[560px]:grid-cols-2 sm:gap-x-6 sm:gap-y-9 lg:grid-cols-3">
             <OptimisticDocumentCards realDocumentIds={realDocumentIds} />
             {documents.map((document) => (
               <DocumentCard key={document.id} document={document} />

@@ -171,7 +171,7 @@ export function UploadDialog() {
       <button
         type="button"
         onClick={() => dialogRef.current?.showModal()}
-        className="shrink-0 cursor-pointer rounded-[3px] bg-marker px-4 py-2.5 text-[13px] font-semibold text-[#171004] transition hover:brightness-[1.08] active:translate-y-px"
+        className="w-full shrink-0 cursor-pointer whitespace-nowrap rounded-[3px] bg-marker px-4 py-2.5 text-[13px] font-semibold text-[#171004] transition hover:brightness-[1.08] active:translate-y-px sm:w-auto"
       >
         Upload a PDF
       </button>
@@ -179,11 +179,11 @@ export function UploadDialog() {
       <dialog
         ref={dialogRef}
         aria-labelledby="upload-dialog-title"
-        className="m-auto w-[min(92vw,520px)] rounded-[4px] border border-rule-strong bg-chrome p-0 text-bone shadow-[0_28px_90px_rgba(0,0,0,0.7)] backdrop:bg-black/70"
+        className="m-auto max-h-[calc(100dvh-24px)] w-[calc(100vw-24px)] max-w-[520px] overflow-y-auto rounded-[4px] border border-rule-strong bg-chrome p-0 text-bone shadow-[0_28px_90px_rgba(0,0,0,0.7)] backdrop:bg-black/70 sm:max-h-[calc(100dvh-32px)] sm:w-[min(92vw,520px)]"
       >
-        <form action={formAction} onSubmit={handleSubmit} className="p-6 sm:p-7">
-          <div className="flex items-start justify-between gap-5">
-            <div>
+        <form action={formAction} onSubmit={handleSubmit} className="p-4 sm:p-7">
+          <div className="flex min-w-0 items-start justify-between gap-3 sm:gap-5">
+            <div className="min-w-0">
               <div className="font-mono text-[10px] tracking-[0.14em] text-graphite-dim uppercase">
                 New document
               </div>
@@ -199,7 +199,7 @@ export function UploadDialog() {
               onClick={() => dialogRef.current?.close()}
               disabled={pending}
               aria-label="Close upload dialog"
-              className="cursor-pointer px-2 py-1 text-xl leading-none text-graphite-dim hover:text-bone disabled:cursor-wait disabled:opacity-50"
+              className="grid h-10 w-10 shrink-0 cursor-pointer place-items-center text-xl leading-none text-graphite-dim hover:text-bone disabled:cursor-wait disabled:opacity-50"
             >
               ×
             </button>
@@ -211,7 +211,7 @@ export function UploadDialog() {
             onDragLeave={() => setIsDragging(false)}
             onDragOver={(event) => event.preventDefault()}
             onDrop={handleDrop}
-            className={`mt-6 block cursor-pointer rounded-[4px] border border-dashed px-6 py-10 text-center transition-colors ${
+            className={`mt-5 block cursor-pointer rounded-[4px] border border-dashed px-4 py-7 text-center transition-colors sm:mt-6 sm:px-6 sm:py-10 ${
               isDragging
                 ? "border-marker-line bg-marker-wash"
                 : "border-rule-strong bg-void hover:border-marker-line"
@@ -228,8 +228,17 @@ export function UploadDialog() {
               onChange={(event) => chooseFile(event.currentTarget.files?.[0])}
               className="sr-only"
             />
-            <span className="block font-serif text-[17px] text-read">
-              {selectedFile ? selectedFile.name : "Drop a PDF here, or choose a file"}
+            <span className="block break-all font-serif text-[16px] leading-[1.4] text-read sm:text-[17px]">
+              {selectedFile ? (
+                selectedFile.name
+              ) : (
+                <>
+                  <span className="sm:hidden">Choose or drop a PDF</span>
+                  <span className="hidden sm:inline">
+                    Drop a PDF here, or choose a file
+                  </span>
+                </>
+              )}
             </span>
             <span className="mt-2 block font-mono text-[10px] text-graphite-dim">
               {selectedFile
@@ -263,19 +272,19 @@ export function UploadDialog() {
             {displayedError}
           </p>
 
-          <div className="mt-3 flex justify-end gap-2.5">
+          <div className="mt-3 flex flex-col-reverse gap-2.5 min-[420px]:flex-row min-[420px]:justify-end">
             <button
               type="button"
               onClick={() => dialogRef.current?.close()}
               disabled={pending}
-              className="cursor-pointer rounded-[3px] border border-rule-strong px-4 py-2.5 text-[13px] text-graphite hover:text-bone disabled:cursor-wait disabled:opacity-50"
+              className="w-full cursor-pointer rounded-[3px] border border-rule-strong px-4 py-2.5 text-[13px] text-graphite hover:text-bone disabled:cursor-wait disabled:opacity-50 min-[420px]:w-auto"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={pending || !selectedFile}
-              className="cursor-pointer rounded-[3px] bg-marker px-4 py-2.5 text-[13px] font-semibold text-[#171004] transition hover:brightness-[1.08] disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-full cursor-pointer rounded-[3px] bg-marker px-4 py-2.5 text-[13px] font-semibold text-[#171004] transition hover:brightness-[1.08] disabled:cursor-not-allowed disabled:opacity-50 min-[420px]:w-auto"
             >
               {pending ? "Uploading..." : "Upload and index"}
             </button>

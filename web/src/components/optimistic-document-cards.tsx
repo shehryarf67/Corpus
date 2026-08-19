@@ -35,7 +35,11 @@ export function OptimisticDocumentCards({
   return (
     <>
       {visibleDocuments.map((document) => (
-        <li key={document.localId} aria-busy="true" className="opacity-60">
+        <li
+          key={document.localId}
+          aria-busy="true"
+          className="mx-auto w-full max-w-[380px] opacity-60 min-[560px]:max-w-none"
+        >
           <div className="relative overflow-hidden rounded-[2px] border border-rule shadow-[0_18px_40px_-28px_rgba(0,0,0,0.95)]">
             <PagePreview seed={document.localId} variant="blank" />
             <div className="absolute inset-0 grid place-items-center">

@@ -14,13 +14,13 @@ export default function Error({ error, reset }: ErrorProps) {
     <div className="flex min-h-[100dvh] flex-col">
       <TopBar />
 
-      <main className="flex flex-1 items-center justify-center px-6 py-16">
+      <main className="flex flex-1 items-center justify-center px-4 py-10 sm:px-6 sm:py-16">
         <div className="w-full max-w-[520px] text-center">
           <div className="font-mono text-[10.5px] tracking-[0.14em] text-graphite-dim uppercase">
             Error
           </div>
 
-          <h1 className="mt-4 font-serif text-[32px] leading-[1.1] font-semibold tracking-[-0.02em]">
+          <h1 className="mt-4 font-serif text-[28px] leading-[1.1] font-semibold tracking-[-0.02em] sm:text-[32px]">
             Something went wrong.
           </h1>
 
@@ -31,7 +31,7 @@ export default function Error({ error, reset }: ErrorProps) {
           <button
             type="button"
             onClick={reset}
-            className="mt-7 cursor-pointer rounded-[3px] bg-marker px-4 py-2.5 text-[13px] font-semibold text-[#171004] transition hover:brightness-[1.08] active:translate-y-px"
+            className="mt-7 w-full cursor-pointer rounded-[3px] bg-marker px-4 py-2.5 text-[13px] font-semibold text-[#171004] transition hover:brightness-[1.08] active:translate-y-px min-[360px]:w-auto"
           >
             Try again
           </button>
