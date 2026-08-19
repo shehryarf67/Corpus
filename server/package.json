@@ -8,6 +8,7 @@
     "worker": "tsx --env-file=.env src/worker.ts",
     "migrate": "tsx --env-file=.env scripts/migrate.ts",
     "backfill:thumbnails": "tsx --env-file=.env scripts/backfill-thumbnails.ts",
+    "audit:storage": "tsx --env-file=.env scripts/audit-storage.ts",
     "test": "tsx --test --test-concurrency=1 src/**/*.test.ts",
     "test:db": "tsx --env-file=.env --test --test-concurrency=1 test/*.integration.test.ts",
     "test:reranker": "tsx --test test/reranker.model.test.ts",

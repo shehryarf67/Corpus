@@ -4,7 +4,14 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { after, before, test } from 'node:test'
 import { Hono } from 'hono'
-import { Chunks, Documents, Jobs, pool } from '../src/lib/db.js'
+import {
+  Chunks,
+  Conversations,
+  Documents,
+  Jobs,
+  Messages,
+  pool,
+} from '../src/lib/db.js'
 import { documentsRoute } from '../src/routes/documents.js'
 import { deletePdf, pdfExists, savePdf } from '../src/lib/storage.js'
 import {
@@ -202,6 +209,24 @@ test('deleting a document removes its stored PDF and pending job', async () => {
 
   const pendingJob = await Jobs.create(document.id)
   if (!pendingJob) throw new Error('Failed to create deletion job')
+  await Chunks.insertMany(document.id, [
+    {
+      chunkIndex: 0,
+      content: 'Cascade deletion test chunk.',
+      pageNumber: 1,
+      charStart: 0,
+      charEnd: 28,
+      embedding: null,
+    },
+  ])
+  const conversation = await Conversations.create(document.id)
+  if (!conversation) throw new Error('Failed to create deletion conversation')
+  const message = await Messages.create(
+    conversation.id,
+    'user',
+    'Will this message cascade?'
+  )
+  if (!message) throw new Error('Failed to create deletion message')
 
   const app = new Hono()
   app.route('/documents', documentsRoute)
@@ -215,7 +240,46 @@ test('deleting a document removes its stored PDF and pending job', async () => {
     assert.equal(response.status, 200)
     assert.equal(await Documents.getById(document.id), null)
     assert.equal(await Jobs.getById(pendingJob.id), null)
+    assert.deepEqual(await Chunks.getByDocumentId(document.id), [])
+    assert.equal(await Conversations.getById(conversation.id), null)
+    const { rows: remainingMessages } = await pool.query(
+      'SELECT id FROM messages WHERE id = $1',
+      [message.id]
+    )
+    assert.deepEqual(remainingMessages, [])
     assert.equal(await pdfExists(storageKey), false)
+  } finally {
+    await pool.query('DELETE FROM users WHERE id = $1', [owner.id])
+  }
+})
+
+test('deleting a document succeeds when its physical PDF is already missing', async () => {
+  const owner = await createTestUser('delete-already-missing-owner')
+  const ownerCookie = await createTestSessionCookie(owner.id)
+  const storageKey = await savePdf(Buffer.from('%PDF-1.4\nAlready missing'))
+  const document = await Documents.create(
+    owner.id,
+    'Already missing PDF',
+    'already-missing.pdf',
+    'application/pdf',
+    {},
+    storageKey
+  )
+  if (!document) throw new Error('Failed to create missing-file deletion fixture')
+
+  await deletePdf(storageKey)
+  const app = new Hono()
+  app.route('/documents', documentsRoute)
+
+  try {
+    const response = await app.request(`/documents/${document.id}`, {
+      method: 'DELETE',
+      headers: { Cookie: ownerCookie },
+    })
+
+    assert.equal(response.status, 200)
+    assert.deepEqual(await response.json(), { ok: true })
+    assert.equal(await Documents.getById(document.id), null)
   } finally {
     await pool.query('DELETE FROM users WHERE id = $1', [owner.id])
   }

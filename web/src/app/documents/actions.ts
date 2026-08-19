@@ -1,7 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getJob, retryDocument, uploadDocument } from "@/lib/api";
+import {
+  deleteDocument,
+  getJob,
+  retryDocument,
+  uploadDocument,
+} from "@/lib/api";
 import { ApiError } from "@/lib/api-error";
 import type {
   JobStatusActionResult,
@@ -122,5 +127,34 @@ export async function retryDocumentAction(
 
     console.error(`document retry failed for ${documentId}`, error);
     return errorState("The document could not be retried. Please try again.");
+  }
+}
+
+export type DeleteDocumentActionResult = {
+  ok: boolean;
+  error: string | null;
+};
+
+export async function deleteDocumentAction(
+  documentId: string,
+): Promise<DeleteDocumentActionResult> {
+  if (!documentId.trim()) {
+    return { ok: false, error: "A document ID is required." };
+  }
+
+  try {
+    await deleteDocument(documentId);
+    revalidatePath("/documents");
+    return { ok: true, error: null };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return { ok: false, error: error.message };
+    }
+
+    console.error(`document deletion failed for ${documentId}`, error);
+    return {
+      ok: false,
+      error: "The document could not be deleted. Please try again.",
+    };
   }
 }

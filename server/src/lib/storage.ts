@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 const DEFAULT_MAX_PDF_SIZE_BYTES = 20 * 1024 * 1024
@@ -60,6 +60,28 @@ function resolveThumbnailPath(thumbnailKey: string): string {
   return path.join(getThumbnailStorageDirectory(), thumbnailKey)
 }
 
+function isMissingFileError(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT'
+}
+
+async function listStoredKeys(
+  directory: string,
+  pattern: RegExp
+): Promise<string[]> {
+  try {
+    const entries = await readdir(directory, { withFileTypes: true })
+    return entries
+      .filter((entry) => entry.isFile() && pattern.test(entry.name))
+      .map((entry) => entry.name)
+      .sort()
+  } catch (error) {
+    // A fresh installation has no storage directory yet, which is equivalent
+    // to an empty directory for maintenance and health checks.
+    if (isMissingFileError(error)) return []
+    throw error
+  }
+}
+
 export async function savePdf(fileBuffer: Buffer): Promise<string> {
   validatePdf(fileBuffer)
 
@@ -90,19 +112,19 @@ export async function pdfExists(storageKey: string): Promise<boolean> {
     // existing directory with an unexpected name.
     return (await stat(resolveStoragePath(storageKey))).isFile()
   } catch (error) {
-    if (
-      error instanceof Error &&
-      'code' in error &&
-      error.code === 'ENOENT'
-    ) {
-      return false
-    }
+    if (isMissingFileError(error)) return false
     throw error
   }
 }
 
 export async function deletePdf(storageKey: string): Promise<void> {
+  // force makes deletion idempotent: a file that already disappeared is not
+  // an error, which lets document deletion finish safely.
   await rm(resolveStoragePath(storageKey), { force: true })
+}
+
+export function listStoredPdfKeys(): Promise<string[]> {
+  return listStoredKeys(getPdfStorageDirectory(), STORAGE_KEY_PATTERN)
 }
 
 export async function saveThumbnail(imageBuffer: Buffer): Promise<string> {
@@ -135,4 +157,11 @@ export async function readThumbnail(thumbnailKey: string): Promise<Buffer> {
 
 export async function deleteThumbnail(thumbnailKey: string): Promise<void> {
   await rm(resolveThumbnailPath(thumbnailKey), { force: true })
+}
+
+export function listStoredThumbnailKeys(): Promise<string[]> {
+  return listStoredKeys(
+    getThumbnailStorageDirectory(),
+    THUMBNAIL_KEY_PATTERN
+  )
 }

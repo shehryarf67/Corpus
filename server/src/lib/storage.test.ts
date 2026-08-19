@@ -3,7 +3,13 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { after, before, test } from 'node:test'
-import { deletePdf, pdfExists, readPdf, savePdf } from './storage.js'
+import {
+  deletePdf,
+  listStoredPdfKeys,
+  pdfExists,
+  readPdf,
+  savePdf,
+} from './storage.js'
 
 let testDirectory: string
 let previousStorageDirectory: string | undefined
@@ -31,9 +37,13 @@ test('savePdf stores a valid PDF under a generated key', async () => {
   assert.match(storageKey, /^[0-9a-f-]+\.pdf$/i)
   assert.equal(await pdfExists(storageKey), true)
   assert.deepEqual(await readPdf(storageKey), pdf)
+  assert.deepEqual(await listStoredPdfKeys(), [storageKey])
 
   await deletePdf(storageKey)
+  // Deletion is intentionally safe to repeat when storage already vanished.
+  await deletePdf(storageKey)
   assert.equal(await pdfExists(storageKey), false)
+  assert.deepEqual(await listStoredPdfKeys(), [])
   await assert.rejects(readPdf(storageKey))
 })
 

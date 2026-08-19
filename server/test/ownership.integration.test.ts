@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { after, test } from 'node:test'
 import { Hono } from 'hono'
 import { Documents, Jobs, pool } from '../src/lib/db.js'
@@ -64,6 +65,14 @@ test('foreign documents and jobs are hidden behind 404 responses', async () => {
       method: 'DELETE',
       headers: { Cookie: strangerCookie },
     })
+    const missingDelete = await app.request(`/documents/${randomUUID()}`, {
+      method: 'DELETE',
+      headers: { Cookie: ownerCookie },
+    })
+    const unauthenticatedDelete = await app.request(
+      `/documents/${document.id}`,
+      { method: 'DELETE' }
+    )
     const foreignQuery = await app.request('/query', {
       method: 'POST',
       headers: {
@@ -94,10 +103,12 @@ test('foreign documents and jobs are hidden behind 404 responses', async () => {
         foreignThumbnail.status,
         foreignJob.status,
         foreignDelete.status,
+        missingDelete.status,
+        unauthenticatedDelete.status,
         foreignQuery.status,
         foreignStream.status,
       ],
-      [404, 404, 404, 404, 404, 404, 404]
+      [404, 404, 404, 404, 404, 404, 401, 404, 404]
     )
     assert.ok(await Documents.getById(document.id))
 

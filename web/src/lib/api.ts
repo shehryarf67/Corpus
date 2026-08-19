@@ -60,6 +60,10 @@ export type UploadDocumentResponse = {
   status: DocumentJobStatus;
 };
 
+export type DeleteDocumentResponse = {
+  ok: true;
+};
+
 export type PersistedConversationMessage = {
   id: string;
   role: "user" | "assistant";
@@ -220,5 +224,15 @@ export function retryDocument(
   return request<UploadDocumentResponse>(
     `/documents/${encodeURIComponent(documentId)}/retry`,
     { method: "POST" },
+  );
+}
+
+/** Permanently delete one owned document and its related backend data. */
+export function deleteDocument(
+  documentId: string,
+): Promise<DeleteDocumentResponse> {
+  return request<DeleteDocumentResponse>(
+    `/documents/${encodeURIComponent(documentId)}`,
+    { method: "DELETE" },
   );
 }

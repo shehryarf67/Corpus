@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { DocumentWorkspaceClient } from "@/components/document-workspace-client";
+import { DeleteDocumentButton } from "@/components/delete-document-button";
 import { TopBar, TopBarDivider } from "@/components/top-bar";
 import {
   getDocument,
@@ -43,14 +44,20 @@ export default async function WorkspacePage(
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden">
       <TopBar>
         <TopBarDivider />
-        <div className="flex min-w-0 items-baseline gap-3">
-          <span className="truncate font-mono text-[12.5px] text-read">
-            {document.filename}
-          </span>
-          <span className="hidden font-mono text-[10.5px] whitespace-nowrap text-graphite-dim sm:inline">
-            <span className="mr-1.5 inline-block h-[5px] w-[5px] rounded-full bg-marker align-middle" />
-            ready · {document.pageCount} pages
-          </span>
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+          <div className="flex min-w-0 flex-1 items-baseline gap-3">
+            <span className="truncate font-mono text-[12.5px] text-read">
+              {document.filename}
+            </span>
+            <span className="hidden font-mono text-[10.5px] whitespace-nowrap text-graphite-dim sm:inline">
+              <span className="mr-1.5 inline-block h-[5px] w-[5px] rounded-full bg-marker align-middle" />
+              ready · {document.pageCount} pages
+            </span>
+          </div>
+          <DeleteDocumentButton
+            documentId={document.id}
+            title={document.title}
+          />
         </div>
       </TopBar>
 
