@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { IngestionJobPollingProvider } from "@/components/ingestion-job-poller";
 import { OptimisticDocumentCards } from "@/components/optimistic-document-cards";
-import { PagePreview } from "@/components/page-preview";
+import { DocumentThumbnail } from "@/components/document-thumbnail";
 import { RetryDocumentButton } from "@/components/retry-document-button";
 import { TopBar } from "@/components/top-bar";
 import { UploadDialog } from "@/components/upload-dialog";
@@ -61,24 +61,18 @@ function activityLine(document: DocumentResponse): string {
 }
 
 /**
- * The thumbnail. Non-ready documents get a blank page plus a label, because
- * there genuinely is no first page to show yet — faking one would imply the
- * document had been read when it hasn't.
+ * Keep the frame in this Server Component while the Client Component handles
+ * image loading failure and swaps in the stable fallback.
  */
 function Thumbnail({ document }: { document: DocumentResponse }) {
-  const isReady = document.status === "done";
-
   return (
     <div className="relative overflow-hidden rounded-[2px] border border-rule shadow-[0_18px_40px_-28px_rgba(0,0,0,0.95)] transition-colors group-hover:border-rule-strong">
-      <PagePreview seed={document.id} variant={isReady ? "page" : "blank"} />
-
-      {!isReady && (
-        <div className="absolute inset-0 grid place-items-center">
-          <span className="font-mono text-[10.5px] tracking-[0.06em] text-graphite-dim">
-            {document.status === "failed" ? "no preview" : "processing..."}
-          </span>
-        </div>
-      )}
+      <DocumentThumbnail
+        documentId={document.id}
+        title={document.title}
+        status={document.status}
+        thumbnailAvailable={document.thumbnailAvailable}
+      />
     </div>
   );
 }

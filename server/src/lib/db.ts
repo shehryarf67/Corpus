@@ -338,6 +338,7 @@ export type DocumentRow = {
   mime_type: string
   metadata: Record<string, unknown>
   storage_key: string | null
+  thumbnail_key: string | null
   uploaded_at: string
 }
 
@@ -590,6 +591,20 @@ export const Documents = {
       [userId]
     )
     return rows
+  },
+
+  async setThumbnailKeyIfMissing(id: string, thumbnailKey: string) {
+    // The NULL condition avoids two workers overwriting one another and
+    // leaving the losing worker's image orphaned on disk.
+    const { rows } = await pool.query<DocumentRow>(
+      `UPDATE documents
+       SET thumbnail_key = $2
+       WHERE id = $1
+         AND thumbnail_key IS NULL
+       RETURNING *`,
+      [id, thumbnailKey]
+    )
+    return rows[0] ?? null
   },
 
   async listForUser(userId: string) {

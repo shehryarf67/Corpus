@@ -1,14 +1,8 @@
 /**
- * Stand-in for a rendered first page.
+ * Stable fallback shown while a preview is unavailable or failed to load.
  *
- * PDFs are stored, but there is no thumbnail/raster endpoint yet. This draws a
- * page-shaped SVG whose lines derive from the document id. That keeps every card
- * visually distinct but perfectly stable between server and client renders —
- * no `Math.random()`, so nothing to mismatch on hydration.
- *
- * When real thumbnails land, this component is the only thing that needs to
- * change: swap the SVG for an <Image> pointed at the generated raster and the
- * grid above it carries on unchanged.
+ * Real previews are served by the protected thumbnail endpoint. This lightweight
+ * SVG keeps the card size stable for processing, failed, and legacy documents.
  */
 
 /**

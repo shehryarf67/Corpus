@@ -9,7 +9,14 @@ import {
   type MessageRole,
   type StoredMessageSource,
 } from '../lib/db.js'
-import { deletePdf, pdfExists, readPdf, savePdf } from '../lib/storage.js'
+import {
+  deletePdf,
+  deleteThumbnail,
+  pdfExists,
+  readPdf,
+  readThumbnail,
+  savePdf,
+} from '../lib/storage.js'
 import { requireAuth, type AuthEnv } from '../middleware/auth.js'
 
 export const documentsRoute = new Hono<AuthEnv>()
@@ -33,6 +40,7 @@ export type DocumentResponse = {
   error: string | null
   chunkCount: number
   pageCount: number
+  thumbnailAvailable: boolean
 }
 
 export type DocumentsResponse = {
@@ -74,6 +82,9 @@ function publicDocument(document: DocumentListRow): DocumentResponse {
     error: document.latest_job_error,
     chunkCount: document.chunk_count,
     pageCount: document.page_count,
+    // Storage keys remain private; the client only needs to know whether it
+    // should request the ownership-protected thumbnail endpoint.
+    thumbnailAvailable: Boolean(document.thumbnail_key),
   }
 }
 
@@ -176,6 +187,33 @@ documentsRoute.get('/:documentId/pdf', async (c) => {
   }
 })
 
+documentsRoute.get('/:documentId/thumbnail', async (c) => {
+  const document = await Documents.getByIdForUser(
+    c.req.param('documentId'),
+    c.get('user').id
+  )
+
+  // Missing, foreign, and preview-less documents deliberately look the same.
+  if (!document?.thumbnail_key) {
+    return c.json({ error: 'Thumbnail not found' }, 404)
+  }
+
+  try {
+    const thumbnail = await readThumbnail(document.thumbnail_key)
+    return new Response(new Uint8Array(thumbnail), {
+      headers: {
+        'Content-Type': 'image/png',
+        'Cache-Control': 'private, max-age=3600',
+      },
+    })
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return c.json({ error: 'Thumbnail not found' }, 404)
+    }
+    throw error
+  }
+})
+
 documentsRoute.delete('/:documentId', async (c) => {
   const userId = c.get('user').id
   const document = await Documents.deleteByIdForUser(
@@ -191,6 +229,11 @@ documentsRoute.delete('/:documentId', async (c) => {
   if (document.storage_key) {
     await deletePdf(document.storage_key).catch((error) => {
       console.error(`could not delete stored PDF ${document.storage_key}`, error)
+    })
+  }
+  if (document.thumbnail_key) {
+    await deleteThumbnail(document.thumbnail_key).catch((error) => {
+      console.error(`could not delete thumbnail ${document.thumbnail_key}`, error)
     })
   }
 

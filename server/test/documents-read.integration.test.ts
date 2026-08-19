@@ -126,6 +126,7 @@ test('document list and detail return owned aggregate data and the latest job', 
       error: null,
       chunkCount: 3,
       pageCount: 3,
+      thumbnailAvailable: false,
     })
 
     const detailResponse = await app.request(

@@ -10,13 +10,16 @@ import { createTestUser } from './auth-fixture.js'
 
 let testStorageDirectory: string
 let previousStorageDirectory: string | undefined
+let previousThumbnailStorageDirectory: string | undefined
 let testUserId: string
 
 before(async () => {
   testUserId = (await createTestUser('ingestion')).id
   previousStorageDirectory = process.env.PDF_STORAGE_DIR
+  previousThumbnailStorageDirectory = process.env.THUMBNAIL_STORAGE_DIR
   testStorageDirectory = await mkdtemp(path.join(tmpdir(), 'corpus-ingestion-'))
-  process.env.PDF_STORAGE_DIR = testStorageDirectory
+  process.env.PDF_STORAGE_DIR = path.join(testStorageDirectory, 'uploads')
+  process.env.THUMBNAIL_STORAGE_DIR = path.join(testStorageDirectory, 'thumbnails')
 })
 
 after(async () => {
@@ -24,6 +27,11 @@ after(async () => {
     delete process.env.PDF_STORAGE_DIR
   } else {
     process.env.PDF_STORAGE_DIR = previousStorageDirectory
+  }
+  if (previousThumbnailStorageDirectory === undefined) {
+    delete process.env.THUMBNAIL_STORAGE_DIR
+  } else {
+    process.env.THUMBNAIL_STORAGE_DIR = previousThumbnailStorageDirectory
   }
 
   await rm(testStorageDirectory, { recursive: true, force: true })

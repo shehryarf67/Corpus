@@ -42,6 +42,7 @@ export type DocumentResponse = {
   error: string | null;
   chunkCount: number;
   pageCount: number;
+  thumbnailAvailable: boolean;
 };
 
 export type DocumentsResponse = {

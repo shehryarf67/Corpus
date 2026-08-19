@@ -5,7 +5,7 @@ import { Documents, Jobs, pool } from '../src/lib/db.js'
 import { documentsRoute } from '../src/routes/documents.js'
 import { jobsRoute } from '../src/routes/jobs.js'
 import { queryRoute } from '../src/routes/query.js'
-import { savePdf } from '../src/lib/storage.js'
+import { savePdf, saveThumbnail } from '../src/lib/storage.js'
 import {
   createTestSessionCookie,
   createTestUser,
@@ -31,6 +31,13 @@ test('foreign documents and jobs are hidden behind 404 responses', async () => {
     storageKey
   )
   if (!document) throw new Error('Failed to create ownership test document')
+  const thumbnailKey = await saveThumbnail(
+    Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      'base64'
+    )
+  )
+  await Documents.setThumbnailKeyIfMissing(document.id, thumbnailKey)
   const job = await Jobs.create(document.id)
   if (!job) throw new Error('Failed to create ownership test job')
 
@@ -49,6 +56,10 @@ test('foreign documents and jobs are hidden behind 404 responses', async () => {
     const foreignPdf = await app.request(`/documents/${document.id}/pdf`, {
       headers: { Cookie: strangerCookie },
     })
+    const foreignThumbnail = await app.request(
+      `/documents/${document.id}/thumbnail`,
+      { headers: { Cookie: strangerCookie } }
+    )
     const foreignDelete = await app.request(`/documents/${document.id}`, {
       method: 'DELETE',
       headers: { Cookie: strangerCookie },
@@ -80,12 +91,13 @@ test('foreign documents and jobs are hidden behind 404 responses', async () => {
       [
         foreignDocument.status,
         foreignPdf.status,
+        foreignThumbnail.status,
         foreignJob.status,
         foreignDelete.status,
         foreignQuery.status,
         foreignStream.status,
       ],
-      [404, 404, 404, 404, 404, 404]
+      [404, 404, 404, 404, 404, 404, 404]
     )
     assert.ok(await Documents.getById(document.id))
 
@@ -98,10 +110,16 @@ test('foreign documents and jobs are hidden behind 404 responses', async () => {
     const ownPdf = await app.request(`/documents/${document.id}/pdf`, {
       headers: { Cookie: ownerCookie },
     })
+    const ownThumbnail = await app.request(
+      `/documents/${document.id}/thumbnail`,
+      { headers: { Cookie: ownerCookie } }
+    )
     assert.equal(ownDocument.status, 200)
     assert.equal(ownJob.status, 200)
     assert.equal(ownPdf.status, 200)
     assert.equal(ownPdf.headers.get('Content-Type'), 'application/pdf')
+    assert.equal(ownThumbnail.status, 200)
+    assert.equal(ownThumbnail.headers.get('Content-Type'), 'image/png')
 
     const ownDelete = await app.request(`/documents/${document.id}`, {
       method: 'DELETE',

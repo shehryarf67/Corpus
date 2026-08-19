@@ -5,3 +5,4 @@ node_modules
 dist
 *.tsbuildinfo
 server/data/uploads/
+server/data/thumbnails/

@@ -4,6 +4,7 @@ import { embedChunks } from '../lib/pdf/embed.js'
 import { layoutText } from '../lib/pdf/layout.js'
 import { persistEmbeddedChunks } from '../lib/pdf/persist.js'
 import { readPdf } from '../lib/storage.js'
+import { ensureDocumentThumbnail } from './document-thumbnail.js'
 
 export type IngestionResult = {
   documentId: string
@@ -32,6 +33,13 @@ export async function processIngestionJob(jobId: string): Promise<IngestionResul
     await Jobs.updateStatus(job.id, 'parsing')
 
     const fileBuffer = await readPdf(document.storage_key)
+
+    // A thumbnail is presentation-only. If a difficult PDF cannot be
+    // rasterized, indexing still continues and the UI uses its fallback.
+    await ensureDocumentThumbnail(document, fileBuffer).catch((error) => {
+      console.error(`could not create thumbnail for document ${document.id}`, error)
+    })
+
     const blocks = await layoutText(fileBuffer)
     const chunks = groupIntoChunks(blocks)
 
