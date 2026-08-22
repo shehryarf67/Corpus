@@ -4,6 +4,7 @@ import { IngestionJobPollingProvider } from "@/components/ingestion-job-poller";
 import { OptimisticDocumentCards } from "@/components/optimistic-document-cards";
 import { DocumentThumbnail } from "@/components/document-thumbnail";
 import { RetryDocumentButton } from "@/components/retry-document-button";
+import { DeleteDocumentButton } from "@/components/delete-document-button";
 import { TopBar } from "@/components/top-bar";
 import { UploadDialog } from "@/components/upload-dialog";
 import {
@@ -114,7 +115,12 @@ function CardDetails({ document }: { document: DocumentResponse }) {
         {activityLine(document)}
       </div>
 
-      {isFailed && <RetryDocumentButton documentId={document.id} />}
+      {isFailed && (
+        <div className="mt-2.5 flex flex-col gap-2 min-[420px]:flex-row min-[420px]:items-start">
+          <RetryDocumentButton documentId={document.id} />
+          <DeleteDocumentButton documentId={document.id} title={document.title} />
+        </div>
+      )}
 
     </div>
   );

@@ -586,3 +586,45 @@ passed after this change.
 - char offsets inside splitOversizedBlock are approximate (rejoining sentences/words with a single space doesnt preserve original whitespace exactly, and now overlap means consecutive pieces share text too), not pixel exact against the source pdf. Acceptable for now.
 - Ollama generation is part of the query phase, not ingestion. It now has response checks, output-token limits, and request timeouts. See query-log.md for the current generation behavior.
 - If ever revisited: swap local embeddings back to Voyage and local generation back to Claude for a "production mode", since the rest of the pipeline (chunking, schema) barely needs to change either way.
+
+## Upload and ingestion crash recovery
+
+The normal retry flow already reruns the complete ingestion pipeline from the
+original PDF. A retry is only allowed when the newest job is failed, the
+document still has a storage_key, and that key still points to a physical PDF.
+Before creating the new pending job, retry deletes any chunks left by the failed
+attempt. Failed documents stay visible in the library and now offer both Retry
+and Delete actions.
+
+The remaining problem was a hard worker crash. A normal thrown ingestion error
+is caught by processIngestionJob and marks the job failed, but a killed process
+cannot execute that catch block. The row could therefore stay in parsing or
+embedding forever.
+
+The worker now heartbeats its active job through Jobs.heartbeat(). This refreshes
+jobs.updated_at every 30 seconds while parsing or embedding is still running.
+Every 60 seconds, Jobs.failAbandoned() finds active ingestion jobs whose
+updated_at has not changed for 15 minutes and marks them failed with a useful
+retry message. These defaults can be changed with:
+
+- WORKER_HEARTBEAT_INTERVAL_MS
+- WORKER_ACTIVE_JOB_TIMEOUT_MS
+- WORKER_RECOVERY_INTERVAL_MS
+
+We chose automatic failure instead of automatically rerunning the job. This
+keeps retries visible and controlled, prevents endless crash loops on a bad PDF,
+and reuses the checks which already ensure that the original file still exists.
+
+SIGINT and SIGTERM now request a graceful shutdown. The worker stops claiming
+new work, lets its current ingestion finish, stops that job's heartbeat, closes
+the Postgres pool, and then exits. A real crash cannot shut down gracefully, so
+the stale-job recovery sweep handles that case later.
+
+Old job history has a separate maintenance command:
+
+    npm run cleanup:jobs -w server
+
+It removes done or failed attempts older than 90 days, or JOB_RETENTION_DAYS if
+configured. It never removes the newest attempt for a document because the
+library uses that row for the current status and failure message. Pending and
+active jobs are never retention-cleaned.

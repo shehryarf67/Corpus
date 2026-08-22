@@ -51,6 +51,25 @@ test('savePdf rejects data without a PDF signature', async () => {
   await assert.rejects(savePdf(Buffer.from('not a pdf')), /valid PDF signature/)
 })
 
+test('savePdf rejects empty and oversized files', async () => {
+  const previousMaximum = process.env.MAX_PDF_SIZE_BYTES
+  process.env.MAX_PDF_SIZE_BYTES = '10'
+
+  try {
+    await assert.rejects(savePdf(Buffer.alloc(0)), /PDF file is empty/)
+    await assert.rejects(
+      savePdf(Buffer.from('%PDF-123456')),
+      /PDF exceeds the maximum size/
+    )
+  } finally {
+    if (previousMaximum === undefined) {
+      delete process.env.MAX_PDF_SIZE_BYTES
+    } else {
+      process.env.MAX_PDF_SIZE_BYTES = previousMaximum
+    }
+  }
+})
+
 test('storage functions reject unsafe storage keys', async () => {
   await assert.rejects(readPdf('../outside.pdf'), /Invalid PDF storage key/)
   await assert.rejects(pdfExists('../outside.pdf'), /Invalid PDF storage key/)

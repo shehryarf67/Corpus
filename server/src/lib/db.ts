@@ -466,6 +466,64 @@ export const Jobs = {
     return rows[0]
   },
 
+  async heartbeat(id: string) {
+    // Parsing and embedding can legitimately take several minutes. Refreshing
+    // updated_at tells the recovery sweep that a worker still owns this job.
+    const { rows } = await pool.query<Job>(
+      `UPDATE jobs
+       SET updated_at = NOW()
+       WHERE id = $1
+         AND status IN ('parsing', 'embedding')
+       RETURNING *`,
+      [id]
+    )
+    return rows[0] ?? null
+  },
+
+  async failAbandoned(activeTimeoutMs: number): Promise<Job[]> {
+    if (!Number.isFinite(activeTimeoutMs) || activeTimeoutMs <= 0) {
+      throw new Error('Active job timeout must be a positive number')
+    }
+
+    // A worker that exits normally finishes its current job. Rows only reach
+    // this age when a worker crashed or lost contact without updating them.
+    const { rows } = await pool.query<Job>(
+      `UPDATE jobs
+       SET status = 'failed',
+           error = 'Processing stopped unexpectedly. Retry this document.'
+       WHERE type = 'ingest'
+         AND status IN ('parsing', 'embedding')
+         AND updated_at <= NOW() - ($1 * INTERVAL '1 millisecond')
+       RETURNING *`,
+      [activeTimeoutMs]
+    )
+    return rows
+  },
+
+  async deleteOldTerminalAttempts(retentionDays: number): Promise<number> {
+    if (!Number.isInteger(retentionDays) || retentionDays <= 0) {
+      throw new Error('Job retention must be a positive whole number of days')
+    }
+
+    const result = await pool.query(
+      `DELETE FROM jobs AS old_job
+       WHERE old_job.status IN ('done', 'failed')
+         AND old_job.updated_at <= NOW() - ($1 * INTERVAL '1 day')
+         AND old_job.id <> (
+           SELECT latest_job.id
+           FROM jobs AS latest_job
+           WHERE latest_job.document_id = old_job.document_id
+           ORDER BY latest_job.created_at DESC, latest_job.id DESC
+           LIMIT 1
+         )`,
+      [retentionDays]
+    )
+
+    // Keep the newest attempt forever because document cards derive their
+    // current status and failure message from it. Only old history is pruned.
+    return result.rowCount ?? 0
+  },
+
   async retryFailedForUser(
     documentId: string,
     userId: string
