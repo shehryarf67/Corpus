@@ -33,6 +33,19 @@ async function withMockFetch<T>(
   }
 }
 
+async function withRejectedFetch<T>(run: () => Promise<T>): Promise<T> {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    throw new TypeError("network unavailable");
+  }) as typeof fetch;
+
+  try {
+    return await run();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 test("one complete event is parsed from one frame", () => {
   const event = parseSseEvent(
     'event: token\ndata: {"text":"Hello"}',
@@ -122,4 +135,23 @@ test("error event calls the error handler and rejects the stream", async () => {
     /Query stream failed/,
   );
   assert.equal(reportedError, "Query stream failed");
+});
+
+test("backend-unavailable responses receive a useful stable message", async () => {
+  await assert.rejects(
+    withMockFetch(
+      Response.json({ error: "internal proxy detail" }, { status: 502 }),
+      () => streamQuery({ documentId: "document-1", question: "Question?" }),
+    ),
+    /answer service is temporarily unavailable/i,
+  );
+});
+
+test("network interruption receives a retryable user-facing message", async () => {
+  await assert.rejects(
+    withRejectedFetch(() =>
+      streamQuery({ documentId: "document-1", question: "Question?" }),
+    ),
+    /connection to the answer service was interrupted/i,
+  );
 });

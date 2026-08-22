@@ -101,7 +101,9 @@ queryRoute.post('/stream', async (c) => {
         console.error('query stream failed', error)
         await stream.writeSSE({
           event: 'error',
-          data: JSON.stringify({ message: 'Query stream failed' }),
+          data: JSON.stringify({
+            message: 'The answer could not be completed. Please try again.',
+          }),
         })
       }
     })
@@ -111,6 +113,9 @@ queryRoute.post('/stream', async (c) => {
     }
 
     console.error('query stream preparation failed', error)
-    return c.json({ error: 'Query stream preparation failed' }, 500)
+    return c.json(
+      { error: 'The question could not be prepared. Please try again.' },
+      500
+    )
   }
 })

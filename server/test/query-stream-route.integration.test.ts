@@ -170,7 +170,10 @@ test('POST /query/stream translates service events into SSE', async () => {
       failedEvents.map((event) => event.event),
       ['conversation', 'status', 'error']
     )
-    assert.equal(failedEvents[2]?.data.message, 'Query stream failed')
+    assert.equal(
+      failedEvents[2]?.data.message,
+      'The answer could not be completed. Please try again.'
+    )
 
     const failedConversationId = failedEvents[0]?.data.conversationId
     assert.equal(typeof failedConversationId, 'string')

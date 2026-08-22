@@ -1,11 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import {
   streamQuery,
   type QuerySource,
 } from "@/lib/query-stream";
 import type { PersistedConversationMessage } from "@/lib/api";
+import { shouldSubmitChatKey } from "@/lib/chat-input";
 
 type ChatMessage = {
   id: string;
@@ -88,6 +95,23 @@ export function DocumentChat({
     // The chat owns citation presentation. A future shared workspace client
     // can provide this callback to navigate/highlight the matching PDF page.
     onCitationSelect?.(source);
+  }
+
+  function handleQuestionKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    // Enter sends the message. Shift+Enter keeps the browser's normal textarea
+    // behavior and inserts a newline for a longer question.
+    if (
+      !shouldSubmitChatKey(
+        event.key,
+        event.shiftKey,
+        event.nativeEvent.isComposing,
+      )
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -205,7 +229,11 @@ export function DocumentChat({
         setMessages((current) =>
           current.map((message) =>
             message.id === assistantMessageId
-              ? { ...message, status: "stopped" }
+              ? {
+                  ...message,
+                  status: "stopped",
+                  progress: undefined,
+                }
               : message,
           ),
         );
@@ -213,7 +241,7 @@ export function DocumentChat({
         setError(
           streamError instanceof Error
             ? streamError.message
-            : "The answer could not be generated.",
+            : "The answer could not be completed. Please try again.",
         );
         // A network, HTTP, or SSE error means there is no trustworthy final
         // assistant answer. Remove its partial placeholder instead of leaving
@@ -280,7 +308,7 @@ export function DocumentChat({
                 message.content
               ) : message.status === "stopped" ? (
                 <span className="text-graphite-dim">
-                  Generation stopped.
+                  You stopped this response before it finished.
                 </span>
               ) : null}
 
@@ -361,14 +389,15 @@ export function DocumentChat({
         )}
 
         <div className="flex min-w-0 items-center gap-2.5 rounded-[4px] border border-rule-strong bg-void py-1 pr-1 pl-[13px] transition-colors focus-within:border-marker-line">
-          <input
-            type="text"
+          <textarea
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
+            onKeyDown={handleQuestionKeyDown}
             disabled={isStreaming}
             placeholder="Ask about this paper..."
             aria-label="Ask a question"
-            className="min-w-0 flex-1 border-0 bg-transparent py-2 text-[13.5px] text-bone outline-none placeholder:text-graphite-dim disabled:opacity-60"
+            rows={1}
+            className="max-h-32 min-h-[38px] min-w-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent py-2 text-[13.5px] leading-[1.55] text-bone outline-none placeholder:text-graphite-dim disabled:opacity-60"
           />
           <button
             type="submit"
@@ -395,7 +424,7 @@ export function DocumentChat({
         </div>
 
         <p className="mt-[9px] text-center font-mono text-[10px] tracking-[0.03em] text-graphite-dim">
-          answers are based only on this document
+          Enter to send · Shift+Enter for a new line
         </p>
       </form>
     </section>

@@ -51,7 +51,7 @@ export async function POST(request: Request): Promise<Response> {
     // Normal upstream errors such as 400 or 401 are passed through above.
     console.error("could not reach Hono query stream", error);
     return Response.json(
-      { error: "Query service is currently unavailable" },
+      { error: "The answer service is temporarily unavailable. Please try again." },
       { status: 502 },
     );
   }

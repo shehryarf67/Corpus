@@ -327,3 +327,41 @@ Important remaining consistency gap: the one-time citation retry currently exist
 - A complete post-fix query evaluation baseline across every case. The earlier full run was interrupted before the safety limits existed.
 
 For the backend query MVP, the main retrieval, generation, conversation, citation, SSE, and evaluation pieces are now present. The clean next product phase is the frontend. If the README's production-style promises are the target, multi-tenancy and RLS should be implemented before deployment, and small-to-big retrieval should either be implemented or removed from the advertised feature list.
+
+## Chat and streaming UX polish
+
+The existing stream flow was verified again. The browser adds the user question
+and an empty processing assistant message before awaiting the request. Token
+events append into that message, while done.answer replaces the accumulated
+draft because the backend's completed answer is authoritative. AbortController
+still cancels active reads. A real failure removes the unfinished assistant
+message, while a user cancellation keeps any visible draft and labels it as
+stopped. RAG refusals still arrive through done and display as ordinary assistant
+answers. conversationId is stored from the first stream event and reused on the
+next question, while the document conversation endpoint restores saved messages
+and sources when the workspace opens again.
+
+The input is now a textarea. Enter submits through form.requestSubmit().
+Shift+Enter keeps the textarea's default behavior and inserts a newline. Enter
+also does nothing while an input method editor is still composing text. The UI
+shows the shortcut below the field, and chat-input.test.ts locks down the policy.
+
+History now has two limits. Postgres still returns at most the newest ten
+messages, but limitHistoryByTokens() then keeps only a contiguous newest slice
+within 1024 cl100k_base tokens. This is an approximate prompt budget for the
+local Llama model, not a claim that Llama uses the exact same tokenizer. The
+same bounded history goes to both rewriteQuestion() and buildAnswerMessages(),
+so retrieval rewriting and answer generation see consistent conversation
+context. If the newest message alone is oversized, the helper retains its tail
+with an Earlier content omitted marker instead of dropping all recent context.
+
+Token counting moved into tokens.ts so PDF chunking and chat history reuse one
+long-lived tiktoken encoder. History tests verify newest-message ordering,
+truncation, and the final budget.
+
+Error copy is now user-facing at every layer. A Next-to-Hono connection failure
+returns that the answer service is temporarily unavailable. A browser network
+failure says the connection was interrupted and invites retry. A failure after
+SSE started emits that the answer could not be completed. These failures still
+leave the user's question available and do not leave a fake finalized assistant
+message behind.

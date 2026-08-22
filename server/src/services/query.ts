@@ -12,6 +12,11 @@ import { fuseWithRRF } from '../lib/rrf.js'
 import { rerankChunks } from '../lib/reranker.js'
 import { rewriteQuestion } from '../lib/rewrite.js'
 import {
+  HISTORY_MESSAGE_LIMIT,
+  HISTORY_TOKEN_BUDGET,
+  limitHistoryByTokens,
+} from '../lib/history.js'
+import {
   logQueryTiming,
   startQueryTiming,
   timeQueryStage,
@@ -102,7 +107,8 @@ export async function prepareQuery(
   // Loading history before saving the new question means the question does not
   // appear twice when both `history` and `question` are sent to the models.
   const history = await timeQueryStage(timing, 'history_load', () =>
-    Messages.getRecentByConversationId(conversation.id)
+    Messages.getRecentByConversationId(conversation.id, HISTORY_MESSAGE_LIMIT)
+      .then((messages) => limitHistoryByTokens(messages, HISTORY_TOKEN_BUDGET))
   )
 
   await timeQueryStage(timing, 'user_message_save', () =>

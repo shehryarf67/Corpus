@@ -107,21 +107,38 @@ export async function streamQuery(
   handlers: QueryStreamHandlers = {},
   signal?: AbortSignal,
 ): Promise<QueryStreamResult> {
-  const response = await fetch("/api/query/stream", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(input),
-    signal,
-  });
+  let response: Response;
+
+  try {
+    response = await fetch("/api/query/stream", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+      signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+
+    const message =
+      "The connection to the answer service was interrupted. Please try again.";
+    handlers.onError?.(message);
+    throw new Error(message);
+  }
 
   if (!response.ok) {
     let message = `Query failed with status ${response.status}`;
 
+    if (response.status === 502 || response.status === 503) {
+      message = "The answer service is temporarily unavailable. Please try again.";
+    }
+
     try {
       const body: unknown = await response.json();
       if (
+        response.status !== 502 &&
+        response.status !== 503 &&
         typeof body === "object" &&
         body !== null &&
         "error" in body &&
