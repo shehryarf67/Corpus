@@ -33,7 +33,7 @@ export function RetryDocumentButton({ documentId }: { documentId: string }) {
   }
 
   return (
-    <div className="mt-2.5">
+    <div>
       <button
         type="button"
         onClick={retry}

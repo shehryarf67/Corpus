@@ -82,7 +82,7 @@ function CardDetails({ document }: { document: DocumentResponse }) {
   const isFailed = document.status === "failed";
 
   return (
-    <div className="mt-3.5">
+    <div className="mt-3.5 flex flex-1 flex-col">
       {/* Reserves two lines so cards in a row stay the same height whether a
           title wraps or not. */}
       <h2 className="line-clamp-2 min-h-[42px] font-serif text-[15.5px] leading-[1.35] font-medium text-bone">
@@ -116,7 +116,7 @@ function CardDetails({ document }: { document: DocumentResponse }) {
       </div>
 
       {isFailed && (
-        <div className="mt-2.5 flex flex-col gap-2 min-[420px]:flex-row min-[420px]:items-start">
+        <div className="mt-auto flex items-start gap-2 pt-3">
           <RetryDocumentButton documentId={document.id} />
           <DeleteDocumentButton documentId={document.id} title={document.title} />
         </div>
@@ -128,6 +128,7 @@ function CardDetails({ document }: { document: DocumentResponse }) {
 
 function DocumentCard({ document }: { document: DocumentResponse }) {
   const isReady = document.status === "done";
+  const isFailed = document.status === "failed";
 
   const body = (
     <>
@@ -144,19 +145,40 @@ function DocumentCard({ document }: { document: DocumentResponse }) {
   // Retry, and fading it out would bury exactly the card you should look at.
   if (!isReady) {
     const stateClass =
-      document.status !== "failed" ? "cursor-not-allowed opacity-60" : "";
+      !isFailed ? "cursor-not-allowed opacity-60" : "";
     return (
-      <li className="mx-auto w-full max-w-[380px] min-[560px]:max-w-none">
-        <div className={`group block ${stateClass}`}>{body}</div>
+      <li className="group/card relative mx-auto flex w-full max-w-[380px] min-[560px]:max-w-none">
+        <div className={`group flex min-w-0 flex-1 flex-col ${stateClass}`}>
+          {body}
+        </div>
+        {!isFailed && (
+          <div className="absolute top-2 right-2 z-10 opacity-80 transition-opacity md:opacity-0 md:group-hover/card:opacity-100 md:group-focus-within/card:opacity-100">
+            <DeleteDocumentButton
+              documentId={document.id}
+              title={document.title}
+              variant="icon"
+            />
+          </div>
+        )}
       </li>
     );
   }
 
   return (
-    <li className="mx-auto w-full max-w-[380px] min-[560px]:max-w-none">
-      <Link href={`/documents/${document.id}`} className="group block">
+    <li className="group/card relative mx-auto flex w-full max-w-[380px] min-[560px]:max-w-none">
+      <Link
+        href={`/documents/${document.id}`}
+        className="group flex min-w-0 flex-1 flex-col"
+      >
         {body}
       </Link>
+      <div className="absolute top-2 right-2 z-10 opacity-80 transition-opacity md:opacity-0 md:group-hover/card:opacity-100 md:group-focus-within/card:opacity-100">
+        <DeleteDocumentButton
+          documentId={document.id}
+          title={document.title}
+          variant="icon"
+        />
+      </div>
     </li>
   );
 }

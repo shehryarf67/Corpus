@@ -7,9 +7,11 @@ import { deleteDocumentAction } from "@/app/documents/actions";
 export function DeleteDocumentButton({
   documentId,
   title,
+  variant = "button",
 }: {
   documentId: string;
   title: string;
+  variant?: "button" | "icon";
 }) {
   const router = useRouter();
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -44,9 +46,28 @@ export function DeleteDocumentButton({
       <button
         type="button"
         onClick={openDialog}
-        className="shrink-0 cursor-pointer rounded-[3px] border border-rule-strong px-2.5 py-1.5 font-mono text-[10.5px] text-graphite transition-colors hover:border-red-400/50 hover:text-red-300"
+        aria-label={variant === "icon" ? `Delete ${title}` : undefined}
+        title={variant === "icon" ? "Delete document" : undefined}
+        className={
+          variant === "icon"
+            ? "grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-[3px] border border-rule-strong bg-void/90 text-graphite shadow-sm transition hover:border-red-400/60 hover:text-red-300 focus-visible:border-red-400/60 focus-visible:text-red-300"
+            : "shrink-0 cursor-pointer rounded-[3px] border border-rule-strong px-3 py-2 font-mono text-[10.5px] text-graphite transition-colors hover:border-red-400/50 hover:text-red-300"
+        }
       >
-        Delete
+        {variant === "icon" ? (
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            className="h-4 w-4"
+          >
+            <path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" />
+          </svg>
+        ) : (
+          "Delete"
+        )}
       </button>
 
       <dialog
