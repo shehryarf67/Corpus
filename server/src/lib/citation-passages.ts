@@ -14,12 +14,17 @@ function words(text: string): string[] {
     .filter((word) => word.length > 1 && !COMMON_WORDS.has(word))
 }
 
-function claimsByLabel(answer: string): Map<string, string[]> {
+export function claimsByLabel(answer: string): Map<string, string[]> {
   const claims = new Map<string, string[]>()
 
   // Citation prompts place labels directly after claims. Sentence-sized units
   // preserve that relationship without asking another model to parse it.
-  const sentences = answer.replace(/\s+/g, ' ').trim().split(/(?<=[.!?])\s+/)
+  const sentences = answer
+    .replace(/\s+/g, ' ')
+    .trim()
+    // Do not detach a citation written after sentence punctuation, such as
+    // `The result improved. [S1]`, from the claim it belongs to.
+    .split(/(?<=[.!?])\s+(?!\[S\d+\])/i)
   for (const sentence of sentences) {
     const labels = Array.from(sentence.matchAll(CITATION_PATTERN)).map(
       (match) => match[1]?.toUpperCase()
@@ -37,7 +42,7 @@ function claimsByLabel(answer: string): Map<string, string[]> {
   return claims
 }
 
-function answerClaims(answer: string): string[] {
+export function answerClaims(answer: string): string[] {
   return answer
     .replace(CITATION_PATTERN, '')
     .replace(/\s+/g, ' ')
@@ -113,6 +118,12 @@ type ScoredPassage = {
   score: number
 }
 
+export type LexicalAttribution = {
+  source: ContextSource
+  passage: string
+  score: number
+}
+
 function bestPassage(claims: string[], content: string): ScoredPassage | null {
   let best: { passage: string; score: number } | null = null
 
@@ -130,6 +141,21 @@ function bestPassage(claims: string[], content: string): ScoredPassage | null {
   }
 
   return best && best.score >= MIN_PASSAGE_SCORE ? best : null
+}
+
+export function lexicalAttributionForClaim(
+  claim: string,
+  candidateSources: readonly ContextSource[]
+): LexicalAttribution | null {
+  let bestMatch: LexicalAttribution | null = null
+
+  for (const source of candidateSources) {
+    const match = bestPassage([claim], source.content)
+    if (!match || (bestMatch && match.score <= bestMatch.score)) continue
+    bestMatch = { source, passage: match.passage, score: match.score }
+  }
+
+  return bestMatch
 }
 
 /** Add an exact, answer-relevant PDF passage without changing source content. */
@@ -190,20 +216,7 @@ export function attributeAnswerSources(
   >()
 
   for (const [claimIndex, claim] of answerClaims(answer).entries()) {
-    let bestMatch:
-      | { source: ContextSource; passage: string; score: number }
-      | null = null
-
-    for (const source of candidateSources) {
-      const match = bestPassage([claim], source.content)
-      if (!match || (bestMatch && match.score <= bestMatch.score)) continue
-
-      bestMatch = {
-        source,
-        passage: match.passage,
-        score: match.score,
-      }
-    }
+    const bestMatch = lexicalAttributionForClaim(claim, candidateSources)
 
     if (!bestMatch) continue
 

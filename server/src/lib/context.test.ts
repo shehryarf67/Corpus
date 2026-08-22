@@ -61,3 +61,30 @@ test('buildContext returns empty context and sources for no retrieved chunks', (
     sources: [],
   })
 })
+
+test('buildContext compresses only generation text and preserves the full source', () => {
+  const fullContent = [
+    'The previous sentence introduces the result.',
+    'Memory falls because subgroups use different bit widths.',
+    'The following sentence qualifies that result.',
+    ...Array.from({ length: 80 }, (_, index) =>
+      `Appendix sentence ${index} discusses unrelated formatting.`
+    ),
+  ].join(' ')
+  const chunk: RetrievedChunk = {
+    id: 'chunk-long',
+    document_id: 'document-one',
+    chunk_index: 9,
+    content: fullContent,
+    page_number: 4,
+    char_start: 500,
+    char_end: 500 + fullContent.length,
+    similarity: 0.91,
+  }
+
+  const result = buildContext([chunk], 'How does the method reduce memory?')
+
+  assert.equal(result.sources[0]?.content, fullContent)
+  assert.match(result.context, /different bit widths/)
+  assert.ok(!result.context.includes('Appendix sentence 79'))
+})

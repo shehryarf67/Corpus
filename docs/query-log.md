@@ -365,3 +365,36 @@ failure says the connection was interrupted and invites retry. A failure after
 SSE started emits that the answer could not be completed. These failures still
 leave the user's question available and do not leave a fake finalized assistant
 message behind.
+
+## Retrieval, generation, and citation safeguards
+
+The main query path still performs vector retrieval and keyword retrieval, joins
+their rankings with RRF, cross-encoder reranks the fused candidates, and sends
+the top three sources into generation. Valid model labels are still checked
+against those real sources. No second Ollama citation-generation request is used.
+
+Passage compression now shortens only the text placed in the generation prompt.
+The complete chunk remains in ContextSource.content for saved citation metadata,
+source display, and PDF matching. Prose compression keeps the strongest matching
+sentence with its immediate neighbours so pronouns and qualifications are not
+cut away. Table compression keeps the header and matching rows together. If a
+question has no safe lexical match, the complete chunk is used instead of making
+an uncertain excerpt. This reduces prompt work without changing retrieval or
+throwing away stored evidence.
+
+Missing or invalid model labels still use deterministic local attribution first.
+Lexical matching is preferred because it can identify exact highlight text. If a
+claim is heavily paraphrased and lexical matching fails, the existing local
+cross-encoder scores that claim against the three candidate chunks. A citation is
+accepted only when the best raw score is at least 1 and beats the runner-up by at
+least 0.75. Weak or ambiguous claims get no citation instead of receiving the
+least-bad source. A cross-encoder fallback sets highlightText to null because it
+identifies a supporting chunk, not exact PDF words, so citation clicking safely
+navigates to the page without inventing a highlight.
+
+Both normal and SSE queries use this same fallback after answer generation. The
+cross-encoder model and tokenizer are shared with retrieval reranking, so they are
+not loaded a second time. Unmatched claim/source pairs are scored in one batch.
+The citation parser also keeps labels written after final punctuation attached to
+their claims, so both `claim [S1].` and `claim. [S1]` can be verified. The server
+unit suite passed 82/82 and the server TypeScript check passed.

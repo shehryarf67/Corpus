@@ -18,6 +18,11 @@ export type RerankedChunk = FusedChunk & {
   rerankerScore: number
 }
 
+export type PassagePair = {
+  query: string
+  passage: string
+}
+
 function loadReranker() {
   tokenizerPromise ??= AutoTokenizer.from_pretrained(RERANKER_MODEL)
   modelPromise ??=
@@ -61,12 +66,22 @@ export async function rerankChunks(
 ): Promise<RerankedChunk[]> {
   if (candidates.length === 0) return []
 
-  const [tokenizer, model] = await loadReranker()
+  const scores = await scorePassagePairs(
+    candidates.map((chunk) => ({ query: question, passage: chunk.content }))
+  )
 
-  // A cross-encoder reads each question and chunk together. Repeating the
-  // question creates one pair for every candidate in this batch.
-  const questions = candidates.map(() => question)
-  const passages = candidates.map((chunk) => chunk.content)
+  return attachRerankerScores(candidates, scores)
+}
+
+/** Score arbitrary query/passage pairs with the same cached cross-encoder. */
+export async function scorePassagePairs(
+  pairs: readonly PassagePair[]
+): Promise<number[]> {
+  if (pairs.length === 0) return []
+
+  const [tokenizer, model] = await loadReranker()
+  const questions = pairs.map((pair) => pair.query)
+  const passages = pairs.map((pair) => pair.passage)
   const inputs = tokenizer(questions, {
     text_pair: passages,
     padding: true,
@@ -77,7 +92,5 @@ export async function rerankChunks(
   // This model returns one raw relevance logit for each question/chunk pair.
   // Raw scores are fine because we only compare candidates for one question.
   const output = await model(inputs)
-  const scores = Array.from(output.logits.data, (score) => Number(score))
-
-  return attachRerankerScores(candidates, scores)
+  return Array.from(output.logits.data, (score) => Number(score))
 }

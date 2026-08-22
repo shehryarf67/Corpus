@@ -1,8 +1,8 @@
 import { validateCitations } from '../lib/citations.js'
 import {
-  attributeAnswerSources,
-  selectCitationPassages,
-} from '../lib/citation-passages.js'
+  attributeAnswerSourcesWithFallback,
+  selectCitationPassagesWithFallback,
+} from '../lib/citation-fallback.js'
 import type { ContextSource } from '../lib/context.js'
 import { Messages } from '../lib/db.js'
 import { chatStream } from '../lib/generation.js'
@@ -140,13 +140,13 @@ export async function* streamPreparedQuery(
     )
   }
 
-  const highlightedSources = timeSynchronousQueryStage(
+  const highlightedSources = await timeQueryStage(
     timing,
     'passage_selection',
     () =>
       needsLocalAttribution
-        ? attributeAnswerSources(validated.answer, prepared.sources)
-        : selectCitationPassages(
+        ? attributeAnswerSourcesWithFallback(validated.answer, prepared.sources)
+        : selectCitationPassagesWithFallback(
             validated.answer,
             validated.sources,
             prepared.sources

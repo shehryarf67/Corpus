@@ -5,9 +5,9 @@ import { chat, type ChatMessage } from '../lib/generation.js'
 import { buildAnswerMessages } from '../lib/prompt.js'
 import { validateCitations } from '../lib/citations.js'
 import {
-  attributeAnswerSources,
-  selectCitationPassages,
-} from '../lib/citation-passages.js'
+  attributeAnswerSourcesWithFallback,
+  selectCitationPassagesWithFallback,
+} from '../lib/citation-fallback.js'
 import { fuseWithRRF } from '../lib/rrf.js'
 import { rerankChunks } from '../lib/reranker.js'
 import { rewriteQuestion } from '../lib/rewrite.js'
@@ -148,7 +148,7 @@ export async function prepareQuery(
 
   // RRF gives us a broad candidate list using both retrieval signals. The
   // cross-encoder then reads the question together with each of the best 15
-  // candidates and sorts them by direct relevance. Only its top five become
+  // candidates and sorts them by direct relevance. Only its top three become
   // generation context, keeping the final prompt focused.
   const fusedResults = timeSynchronousQueryStage(timing, 'rrf_fusion', () =>
     fuseWithRRF(vectorResults, keywordResults)
@@ -163,7 +163,7 @@ export async function prepareQuery(
   const { sources, context } = timeSynchronousQueryStage(
     timing,
     'context_build',
-    () => buildContext(contextChunks)
+    () => buildContext(contextChunks, rewrittenQuestion)
   )
 
   // Retrieval used the standalone rewrite, but the answer prompt uses exactly
@@ -241,13 +241,13 @@ export async function queryConversation(
     )
   }
 
-  const highlightedSources = timeSynchronousQueryStage(
+  const highlightedSources = await timeQueryStage(
     timing,
     'passage_selection',
     () =>
       needsLocalAttribution
-        ? attributeAnswerSources(validated.answer, prepared.sources)
-        : selectCitationPassages(
+        ? attributeAnswerSourcesWithFallback(validated.answer, prepared.sources)
+        : selectCitationPassagesWithFallback(
             validated.answer,
             validated.sources,
             prepared.sources
