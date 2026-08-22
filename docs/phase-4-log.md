@@ -2151,3 +2151,42 @@ not used as the optimization benchmark.
 
 Verification passed: 65 server unit tests, 24 PostgreSQL integration tests, the
 real Ollama/PostgreSQL SSE test, server TypeScript, and git diff validation.
+
+Step 4: PDF viewer and citation polish audit
+
+The protected PDF still follows the same path: React-PDF requests the same-origin
+Next route at /api/documents/:id/pdf, Next forwards the HttpOnly cookie to Hono,
+Hono authenticates and checks ownership, and Next returns the upstream PDF body
+without converting it to text. Missing, foreign, and unavailable PDFs remain
+safe error responses rather than exposing storage paths.
+
+The viewer now gives explicit citation feedback. A new citation request first
+shows that Corpus is opening the page and locating the passage. PdfDocument then
+reports either highlighted or not-found to PdfViewer. The final status says that
+the passage was highlighted, or that the correct page opened but exact matching
+was unavailable. The request ID is stored with the result so a late callback
+from an older citation cannot overwrite a newer click. Manual Previous or Next
+navigation dismisses stale citation feedback.
+
+PDF load errors now explain that the file may be unavailable or inaccessible and
+offer Try loading again. The retry remounts PdfDocument with a new key, which
+causes React-PDF to request and parse the protected PDF again. Loading text was
+also changed to Loading document pages so it describes the actual operation.
+
+Page and zoom bounds now live in pure helpers in pdf-viewer-state.ts. Page
+requests clamp to 1 through totalPages and return null before a PDF has loaded.
+Zoom remains between 75 and 200 percent.
+
+Citation span construction and matching were separated into testable helpers in
+citation-matching.ts. React-PDF span text and top positions become line-aware
+fragments, normalization maps characters back to source spans, and matching
+returns only the span indexes belonging to the unique supporting passage. Tests
+now run the same passage at 75, 100, 125, 150, and 200 percent zoom and confirm
+that every scale selects the same spans.
+
+Table behavior remains layered. Ingestion keeps tables separate from prose, and
+oversized table pieces repeat their header. Citation passage selection keeps the
+source chunk content, including its header and row context, while normal visual
+highlighting still prefers answer-supporting prose over nearby headings. A new
+test verifies that table header and supporting-row information survive citation
+selection.

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  citationFragmentsFromRenderedSpans,
   matchCitationPassage,
+  matchCitationSpanIndexes,
   normalizeCitationText,
   normalizePageFragments,
 } from "./citation-matching";
@@ -79,4 +81,18 @@ test("unrelated chunk and page text produce no match", () => {
   );
 
   assert.equal(match, null);
+});
+
+test("citation span matching stays stable at different PDF zoom levels", () => {
+  const chunk = "The supporting passage remains correctly highlighted after zooming.";
+
+  for (const zoom of [0.75, 1, 1.25, 1.5, 2]) {
+    const fragments = citationFragmentsFromRenderedSpans([
+      { text: "A nearby heading", top: 100 * zoom },
+      { text: "The supporting passage remains", top: 130 * zoom },
+      { text: "correctly highlighted after zooming.", top: 150 * zoom },
+    ]);
+
+    assert.deepEqual(matchCitationSpanIndexes(chunk, fragments), [1, 2]);
+  }
 });

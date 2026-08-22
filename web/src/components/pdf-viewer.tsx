@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import PdfDocument from "./pdf-document"
 import { accessibleScrollBehavior } from "@/lib/motion"
+import { changePdfZoom, clampPdfPage } from "@/lib/pdf-viewer-state"
 
 
 type PdfViewerProps = {
@@ -18,6 +19,11 @@ type PdfViewerProps = {
     // identifies the request and content supplies text to match on that page.
     targetChunkId?: string
     targetContent?: string
+}
+
+type HighlightResult = {
+    requestId: number
+    result: "highlighted" | "not-found"
 }
 
 export function PdfViewer(PdfViewerProps: PdfViewerProps) {
@@ -39,6 +45,9 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
     const [zoom, setZoom] = useState(1)
     const [error, setError] = useState<string | null>(null)
     const [pageWidth, setPageWidth] = useState<number | undefined>(undefined)
+    const [reloadKey, setReloadKey] = useState(0)
+    const [highlightResult, setHighlightResult] = useState<HighlightResult | null>(null)
+    const [dismissedCitationRequestId, setDismissedCitationRequestId] = useState<number | null>(null)
 
     // Reference for every container of each page in the PDF. 
     // This allows for scrolling to a specific page when the user navigates through the document.
@@ -80,22 +89,23 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
 
     function handleLoadError(loadError: Error) {
         console.error("PDF viewer failed to load", loadError)
-        setError("The PDF could not be displayed.")
+        setError("This PDF could not be loaded. It may be unavailable or you may no longer have access.")
     }
 
     function zoomIn() {
-        setZoom((currentZoom) => Math.min(currentZoom + 0.25, 2))
+        setZoom((currentZoom) => changePdfZoom(currentZoom, "in"))
     }
 
     function zoomOut() {
-        setZoom((currentZoom) => Math.max(currentZoom - 0.25, 0.75))
+        setZoom((currentZoom) => changePdfZoom(currentZoom, "out"))
     }
 
     const scrollToPage = useCallback((pageNumber: number) => {
         // No page elements exist until React-PDF has successfully loaded.
         if (totalPages === 0) return null
 
-        const safePage = Math.min(Math.max(pageNumber, 1), totalPages)
+        const safePage = clampPdfPage(pageNumber, totalPages)
+        if (safePage == null) return null
 
         pageRefs.current.get(safePage)?.scrollIntoView({
             behavior: accessibleScrollBehavior(),
@@ -112,6 +122,9 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
         // IntersectionObserver will later keep this state synchronized while
         // scrolling. For now, button/programmatic navigation updates it here.
         handleCurrentPageChange(safePage)
+        // Previous/Next is now the user's active navigation, so an older
+        // citation result should not keep describing a page they left.
+        setDismissedCitationRequestId(targetPageRequestId ?? 0)
     }
 
     useEffect(() => {
@@ -128,7 +141,34 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
         })
 
         return () => cancelAnimationFrame(frameId)
-    }, [scrollToPage, targetPage, targetPageRequestId, totalPages])
+    }, [scrollToPage, targetContent, targetPage, targetPageRequestId, totalPages])
+
+    const citationRequestId = targetPageRequestId ?? 0
+    const handleHighlightResult = useCallback(
+        (result: "highlighted" | "not-found") => {
+            if (targetPage == null) return
+            setHighlightResult({ requestId: citationRequestId, result })
+        },
+        [citationRequestId, targetPage],
+    )
+
+    const citationFeedback = (() => {
+        if (
+            targetPage == null ||
+            dismissedCitationRequestId === citationRequestId
+        ) {
+            return null
+        }
+        if (!targetContent) {
+            return `Page ${targetPage} opened. No precise passage was available to highlight.`
+        }
+        if (highlightResult?.requestId !== citationRequestId) {
+            return `Opening page ${targetPage} and locating the supporting passage...`
+        }
+        return highlightResult.result === "highlighted"
+            ? `Page ${targetPage} opened and the supporting passage was highlighted.`
+            : `Page ${targetPage} opened. The exact passage could not be highlighted.`
+    })()
 
     const previousDisabled = totalPages === 0 || currentPage <= 1
     const nextDisabled = totalPages === 0 || currentPage >= totalPages
@@ -196,6 +236,16 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
                 </div>
             </div>
 
+            {citationFeedback && (
+                <p
+                    role="status"
+                    aria-live="polite"
+                    className="shrink-0 border-b border-rule bg-marker-wash px-3 py-2 font-mono text-[10.5px] leading-[1.45] text-graphite sm:px-4"
+                >
+                    {citationFeedback}
+                </p>
+            )}
+
             <div
                 id="pdf-page-scroll-region"
                 ref={scrollRegionRef}
@@ -205,11 +255,24 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
                 className="min-h-0 max-w-full flex-1 overflow-auto bg-void p-2 sm:p-5 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-marker-line"
             >
                 {error ? (
-                    <div role="alert" className="grid min-h-[240px] place-items-center text-center font-serif text-[14px] text-graphite">
-                        {error}
+                    <div role="alert" className="grid min-h-[240px] place-items-center px-5 text-center">
+                        <div>
+                            <p className="font-serif text-[14px] leading-6 text-graphite">{error}</p>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setError(null)
+                                    setReloadKey((current) => current + 1)
+                                }}
+                                className="mt-4 cursor-pointer rounded-[3px] border border-rule-strong px-3 py-2 font-mono text-[10.5px] text-graphite transition-colors hover:border-marker-line hover:text-bone"
+                            >
+                                Try loading again
+                            </button>
+                        </div>
                     </div>
                 ) : (
                     <PdfDocument
+                        key={reloadKey}
                         fileUrl={fileUrl}
                         zoom={zoom}
                         pageWidth={pageWidth}
@@ -220,6 +283,7 @@ export function PdfViewer(PdfViewerProps: PdfViewerProps) {
                         highlightChunkId={targetChunkId}
                         highlightContent={targetContent}
                         highlightRequestId={targetPageRequestId}
+                        onHighlightResult={handleHighlightResult}
                     />
                 )}
             </div>

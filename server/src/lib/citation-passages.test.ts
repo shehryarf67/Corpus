@@ -29,6 +29,20 @@ test('selects the supporting sentence instead of a nearby table heading', () => 
   assert.equal(result?.highlightText, supporting)
 })
 
+test('table citations keep the header and supporting row together', () => {
+  const tableHeader = 'Region | Requests | Approval rate'
+  const supportingRow = 'North | 240 | 92 percent'
+  const tableContent = `${tableHeader}\n${supportingRow}\nSouth | 170 | 81 percent`
+  const [result] = selectCitationPassages(
+    'The North region handled 240 requests with a 92 percent approval rate [S1].',
+    [source(tableContent)]
+  )
+
+  assert.equal(result?.content, tableContent)
+  assert.match(result?.highlightText ?? '', /Region.*Requests.*Approval rate/)
+  assert.match(result?.highlightText ?? '', /North.*240.*92 percent/)
+})
+
 test('uses matching numbers to choose the correct passage', () => {
   const [result] = selectCitationPassages(
     'Increasing the group count from 128 to 768 produces a 0.1 percent gain [S1].',

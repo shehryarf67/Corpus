@@ -3,9 +3,8 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import {
-  matchCitationPassage,
-  normalizePageFragments,
-  type CitationTextFragment,
+  citationFragmentsFromRenderedSpans,
+  matchCitationSpanIndexes,
 } from "@/lib/citation-matching";
 import { accessibleScrollBehavior } from "@/lib/motion";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -30,6 +29,7 @@ type PdfDocumentProps = {
   highlightChunkId?: string;
   highlightContent?: string;
   highlightRequestId?: number;
+  onHighlightResult?: (result: "highlighted" | "not-found") => void;
 };
 
 function clearCitationHighlight(pageElements: Iterable<HTMLDivElement>) {
@@ -49,6 +49,7 @@ type ApplyHighlightOptions = {
   content?: string;
   pageRefs: RefObject<Map<number, HTMLDivElement>>;
   scrollFrameRef: RefObject<number | null>;
+  onHighlightResult?: (result: "highlighted" | "not-found") => void;
 };
 
 function applyCitationHighlight({
@@ -58,6 +59,7 @@ function applyCitationHighlight({
   content,
   pageRefs,
   scrollFrameRef,
+  onHighlightResult,
 }: ApplyHighlightOptions) {
   // All pages report text-layer completion. Only the cited page needs work.
   if (renderedPage !== targetPage || !chunkId || !content) return;
@@ -74,39 +76,31 @@ function applyCitationHighlight({
   );
   if (spans.length === 0) return;
 
-  let previousTop: number | null = null;
-  const fragments: CitationTextFragment[] = spans.map((span, sourceIndex) => {
-    const top = span.getBoundingClientRect().top;
-    const fragment = {
+  const fragments = citationFragmentsFromRenderedSpans(
+    spans.map((span) => ({
       text: span.textContent ?? "",
-      sourceIndex,
-      // A visible top-position change tells us PDF.js moved to another line.
-      lineBreakBefore:
-        previousTop !== null && Math.abs(top - previousTop) > 2,
-    };
-    previousTop = top;
-    return fragment;
-  });
-
-  const normalizedPage = normalizePageFragments(fragments);
-  const match = matchCitationPassage(content, normalizedPage.text);
+      top: span.getBoundingClientRect().top,
+    })),
+  );
+  const matchedSpanIndexes = matchCitationSpanIndexes(content, fragments);
 
   // Ambiguous or weak matches deliberately produce no highlight. Page
   // navigation already succeeded independently, so this remains fail-soft.
-  if (!match) return;
-
-  const matchedSpanIndexes = new Set(
-    normalizedPage.sourceIndexes.slice(match.start, match.end),
-  );
+  if (!matchedSpanIndexes) {
+    onHighlightResult?.("not-found");
+    return;
+  }
 
   for (const sourceIndex of matchedSpanIndexes) {
     spans[sourceIndex]?.classList.add("corpus-citation-highlight");
   }
 
-  const firstMatchedIndex = matchedSpanIndexes.values().next().value;
+  const firstMatchedIndex = matchedSpanIndexes[0];
   const firstMatchedSpan =
     firstMatchedIndex === undefined ? undefined : spans[firstMatchedIndex];
   if (!firstMatchedSpan) return;
+
+  onHighlightResult?.("highlighted");
 
   if (scrollFrameRef.current !== null) {
     cancelAnimationFrame(scrollFrameRef.current);
@@ -133,6 +127,7 @@ export default function PdfDocument({
   highlightChunkId,
   highlightContent,
   highlightRequestId,
+  onHighlightResult,
 }: PdfDocumentProps) {
   // PdfDocument needs this count to know how many Page components to create.
   // PdfViewer separately stores the same value for its toolbar and controls.
@@ -157,6 +152,7 @@ export default function PdfDocument({
         content: highlightContent,
         pageRefs,
         scrollFrameRef,
+        onHighlightResult,
       });
     }
 
@@ -172,6 +168,7 @@ export default function PdfDocument({
     highlightPage,
     highlightRequestId,
     pageRefs,
+    onHighlightResult,
   ]);
 
   return (
@@ -179,7 +176,13 @@ export default function PdfDocument({
       file={fileUrl}
       onLoadSuccess={handleDocumentLoad}
       onLoadError={onLoadError}
-      loading={<p role="status" aria-live="polite">Loading PDF...</p>}
+      loading={
+        <div className="grid min-h-[240px] place-items-center px-5 text-center">
+          <p role="status" aria-live="polite" className="font-mono text-[11px] text-graphite-dim">
+            Loading document pages...
+          </p>
+        </div>
+      }
       error={<p role="alert">The PDF could not be displayed.</p>}
     >
       {Array.from({ length: numberOfPages }, (_, index) => {
@@ -221,6 +224,7 @@ export default function PdfDocument({
                   content: highlightContent,
                   pageRefs,
                   scrollFrameRef,
+                  onHighlightResult,
                 })
               }
             />

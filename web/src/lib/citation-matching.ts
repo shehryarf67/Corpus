@@ -16,6 +16,43 @@ export type CitationMatch = {
   passage: string;
 };
 
+export type RenderedCitationSpan = {
+  text: string;
+  top: number;
+};
+
+/** Convert rendered span positions into the line-aware fragments we match. */
+export function citationFragmentsFromRenderedSpans(
+  spans: RenderedCitationSpan[],
+): CitationTextFragment[] {
+  let previousTop: number | null = null;
+
+  return spans.map((span, sourceIndex) => {
+    const fragment = {
+      text: span.text,
+      sourceIndex,
+      lineBreakBefore:
+        previousTop !== null && Math.abs(span.top - previousTop) > 2,
+    };
+    previousTop = span.top;
+    return fragment;
+  });
+}
+
+/** Return the React-PDF span indexes supporting one citation passage. */
+export function matchCitationSpanIndexes(
+  chunkContent: string,
+  fragments: CitationTextFragment[],
+): number[] | null {
+  const normalizedPage = normalizePageFragments(fragments);
+  const match = matchCitationPassage(chunkContent, normalizedPage.text);
+  if (!match) return null;
+
+  return [
+    ...new Set(normalizedPage.sourceIndexes.slice(match.start, match.end)),
+  ];
+}
+
 const LIGATURES: Record<string, string> = {
   "ﬀ": "ff",
   "ﬁ": "fi",
